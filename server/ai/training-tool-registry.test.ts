@@ -44,9 +44,11 @@ describe('T22 fixed training tool registry', () => {
 
   it('uses the smaller remaining-deadline timeout and classifies a timed-out binding as an invoked failure', async () => {
     let executions = 0
-    const registry = createTrainingToolRegistry({ execute: async () => { executions++; await new Promise<void>(() => {}); return null } })
+    const timers: number[] = []
+    const registry = createTrainingToolRegistry({ execute: async () => { executions++; await new Promise<void>(() => {}); return null } }, { setTimer: (callback, milliseconds) => { timers.push(milliseconds); callback(); return 1 as unknown as ReturnType<typeof setTimeout> }, clearTimer: () => {} })
     const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 1, () => {})
     expect(outcome).toEqual({ ok: false, reason: 'tool_failure' })
     expect(executions).toBe(1)
+    expect(timers).toEqual([1])
   })
 })

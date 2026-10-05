@@ -22,7 +22,8 @@ const defaultTool: RegisteredTool = Object.freeze({
   validateResult: validatePerformanceAnalysisResult,
 })
 
-export function createTrainingToolRegistry(overrides: Partial<Pick<RegisteredTool, 'execute'>> = {}) {
+export type TrainingToolTiming = { readonly setTimer: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>; readonly clearTimer: (timer: ReturnType<typeof setTimeout>) => void }
+export function createTrainingToolRegistry(overrides: Partial<Pick<RegisteredTool, 'execute'>> = {}, timing: TrainingToolTiming = { setTimer: globalThis.setTimeout, clearTimer: globalThis.clearTimeout }) {
   const tool = Object.freeze({ ...defaultTool, ...overrides }) as RegisteredTool
   const tools = Object.freeze([tool]) as readonly RegisteredTool[]
   const lookup = (name: string) => name === tool.descriptor.name ? tool : undefined
@@ -38,15 +39,16 @@ export function createTrainingToolRegistry(overrides: Partial<Pick<RegisteredToo
     const timeoutMs = Math.min(100, remainingMs)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const timed = new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('tool timeout')) }, timeoutMs) })
+      const timed = new Promise<never>((_, reject) => { timer = timing.setTimer(() => { controller.abort(); reject(new Error('tool timeout')) }, timeoutMs) })
+      const aborted = new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(new Error('tool aborted')), { once: true }))
       onInvocation()
-      const raw = await Promise.race([binding.execute(args.value, context, controller.signal), timed])
+      const raw = await Promise.race([binding.execute(args.value, context, controller.signal), timed, aborted])
       const result = binding.validateResult(raw, context)
       return result.ok ? result : { ok: false, reason: 'invalid_tool_result' }
     } catch {
       return { ok: false, reason: 'tool_failure' }
     } finally {
-      if (timer !== undefined) clearTimeout(timer)
+      if (timer !== undefined) timing.clearTimer(timer)
       signal.removeEventListener('abort', abort)
     }
   }

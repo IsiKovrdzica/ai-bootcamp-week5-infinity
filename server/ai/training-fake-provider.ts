@@ -14,6 +14,8 @@ export class ScriptedAgentModelProvider implements AgentModelProvider {
   private cursor = 0
   adapterCallCount = 0
   readonly requests: SanitizedProviderRequest[] = []
+  private readonly deferred = new Map<string, (value: unknown) => void>()
+  resolveDeferred(key: string, value: unknown): void { this.deferred.get(key)?.(value) }
   constructor(entries: readonly ScriptedStep[]) { this.script = Object.freeze(entries.map(cloneScriptEntry)) }
   generateStep(request: Readonly<ModelStepRequest>, { signal }: { signal: AbortSignal }): Promise<unknown> {
     this.adapterCallCount += 1
@@ -22,7 +24,8 @@ export class ScriptedAgentModelProvider implements AgentModelProvider {
     if (!entry) return Promise.reject(new ProviderFailure('programming'))
     if (entry.type === 'resolve') return Promise.resolve(entry.value)
     if (entry.type === 'reject') return Promise.reject(entry.failure)
-    return new Promise((_, reject) => {
+    return new Promise((resolve, reject) => {
+      this.deferred.set(entry.key, resolve)
       const abort = () => reject(new ProviderFailure('client_cancelled' satisfies ProviderFailureKind))
       if (signal.aborted) abort()
       else signal.addEventListener('abort', abort, { once: true })

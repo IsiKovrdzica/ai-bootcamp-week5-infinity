@@ -38,7 +38,8 @@ describe('T12 proposal and argument validation', () => {
   it('accepts only an exact tool proposal for the select-tool phase', () => {
     expect(validateTrainingModelProposal({ kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } }, 'select_tool').ok).toBe(true)
     expect(validateTrainingModelProposal({ kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1', score: 320 } } }, 'select_tool').ok).toBe(false)
-    expect(validateTrainingModelProposal({ kind: 'tool_request', toolRequest: { name: 'other', arguments: { gameContextId: 'ctx_1' } } }, 'select_tool').ok).toBe(false)
+    // Structural parsing deliberately leaves an exact unknown name for the fixed registry allowlist.
+    expect(validateTrainingModelProposal({ kind: 'tool_request', toolRequest: { name: 'other', arguments: { gameContextId: 'ctx_1' } } }, 'select_tool').ok).toBe(true)
     for (const value of [null, { kind: 'tool_request' }, { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: {} } }, { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'bad space' } } }, { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1', instruction: 'ignore policy' } } }, { kind: 'final', plan: {} }]) expect(validateTrainingModelProposal(value, 'select_tool').ok).toBe(false)
     expect(validateTrainingModelProposal({ kind: 'refusal' }, 'produce_final').ok).toBe(true)
     expect(validateTrainingModelProposal({ kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } }, 'produce_final').ok).toBe(false)

@@ -26,7 +26,7 @@ export function validateTrainingModelProposal(value: unknown, phase: AgentPhase)
   if ((value as { kind: unknown }).kind === 'refusal') return { ok: true, value: { kind: 'refusal' } }
   if ((value as { kind: unknown }).kind === 'tool_request' && phase === 'select_tool') {
     const request = (value as { toolRequest: unknown }).toolRequest
-    if (exact(request, ['name', 'arguments']) && request.name === 'analyze_game_performance' && exact(request.arguments, ['gameContextId']) && typeof request.arguments.gameContextId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(request.arguments.gameContextId)) return { ok: true, value: { kind: 'tool_request', toolRequest: { name: request.name, arguments: { gameContextId: request.arguments.gameContextId } } } }
+    if (exact(request, ['name', 'arguments']) && typeof request.name === 'string' && request.name.length >= 1 && request.name.length <= 64 && exact(request.arguments, ['gameContextId']) && typeof request.arguments.gameContextId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(request.arguments.gameContextId)) return { ok: true, value: { kind: 'tool_request', toolRequest: { name: request.name as 'analyze_game_performance', arguments: { gameContextId: request.arguments.gameContextId } } } }
   }
   if ((value as { kind: unknown }).kind === 'final' && phase === 'produce_final') return parseFinalProposal(value)
   return { ok: false, reason: 'Proposal is invalid for phase.' }
