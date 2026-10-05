@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: BrickPulse Training Planner API
+  version: 1.0.0
+  description: Additive Week 05 contract. The existing /api/ai/advice contract is unchanged.
+paths:
+  /api/ai/training-plan:
+    post:
+      operationId: createTrainingPlan
+      summary: Run one bounded evidence-based training-plan workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameSummary'
+      responses:
+        '200':
+          description: Completed and validated training plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingPlanSuccess'
+        '400':
+          description: Malformed, oversized, structurally invalid, inconsistent, or nonterminal game summary; no run is created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidGameSummaryError'
+        '422':
+          description: The bounded run stopped because an application policy or model/final validation rejected further work
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingPlanRejected'
+        '503':
+          description: Provider, tool, validated-result, deadline, or cancellation failure prevented completion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingPlanUnavailable'
+components:
+  schemas:
+    GameSummary:
+      type: object
+      additionalProperties: false
+      required: [outcome, score, bricksDestroyed, livesRemaining, livesLost, durationSeconds]
+      properties:
+        outcome:
+          type: string
+          enum: [WON, GAME_OVER]
+        score:
+          type: integer
+          minimum: 0
+          maximum: 320
+        bricksDestroyed:
+          type: integer
+          minimum: 0
+          maximum: 32
+        livesRemaining:
+          type: integer
+          minimum: 0
+          maximum: 3
+        livesLost:
+          type: integer
+          minimum: 0
+          maximum: 3
+        durationSeconds:
+          type: number
+          minimum: 0
+      description: >-
+        The existing handwritten validator also requires finite numbers,
+        score = bricksDestroyed * 10, livesRemaining + livesLost = 3,
+        WON with 32 destroyed bricks, and GAME_OVER with zero lives remaining.
+    EvidenceId:
+      type: string
+      enum:
+        - game.outcome
+        - game.bricks_destroyed
+        - game.completion_rate
+        - game.duration_seconds
+        - game.bricks_per_minute
+        - game.lives
+    TrainingEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, finding]
+      properties:
+        id:
+          $ref: '#/components/schemas/EvidenceId'
+        finding:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '.*\S.*'
+    TrainingPlan:
+      type: object
+      additionalProperties: false
+      required: [summary, focus, recommendation, evidence, confidence, completed]
+      properties:
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '.*\S.*'
+        focus:
+          type: string
+          enum: [survival, efficiency, consistency]
+        recommendation:
+          type: string
+          minLength: 1
+          maxLength: 240
+          pattern: '.*\S.*'
+        evidence:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/TrainingEvidence'
+        confidence:
+          type: string
+          enum: [low, medium, high]
+        completed:
+          const: true
+    PublicRunMetadata:
+      type: object
+      additionalProperties: false
+      required: [runId, status, stopReason, stepCount, providerAttemptCount, toolCallCount, elapsedMs]
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        status:
+          type: string
+          enum: [completed, stopped, failed]
+        stopReason:
+          type: string
+          enum:
+            - completed
+            - invalid_model_proposal
+            - unknown_tool
+            - invalid_tool_arguments
+            - invalid_tool_result
+            - tool_failure
+            - provider_failure
+            - step_limit
+            - tool_call_limit
+            - provider_attempt_limit
+            - total_deadline
+            - repeated_action
+            - invalid_final_output
+            - cancelled
+        stepCount:
+          type: integer
+          minimum: 0
+          maximum: 3
+        providerAttemptCount:
+          type: integer
+          minimum: 0
+          maximum: 6
+        toolCallCount:
+          type: integer
+          minimum: 0
+          maximum: 2
+        elapsedMs:
+          type: integer
+          minimum: 0
+          maximum: 30000
+    TrainingPlanSuccess:
+      type: object
+      additionalProperties: false
+      required: [run, plan]
+      properties:
+        run:
+          allOf:
+            - $ref: '#/components/schemas/PublicRunMetadata'
+            - type: object
+              properties:
+                status:
+                  const: completed
+                stopReason:
+                  const: completed
+        plan:
+          $ref: '#/components/schemas/TrainingPlan'
+    InvalidGameSummaryError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              const: INVALID_GAME_SUMMARY
+            message:
+              const: Invalid game summary.
+    TrainingPlanRejected:
+      type: object
+      additionalProperties: false
+      required: [run, error]
+      properties:
+        run:
+          $ref: '#/components/schemas/PublicRunMetadata'
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              const: TRAINING_PLAN_REJECTED
+            message:
+              const: Training plan could not be completed safely.
+    TrainingPlanUnavailable:
+      type: object
+      additionalProperties: false
+      required: [run, error]
+      properties:
+        run:
+          $ref: '#/components/schemas/PublicRunMetadata'
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              const: TRAINING_PLAN_UNAVAILABLE
+            message:
+              const: Training plan is temporarily unavailable. Please try again later.

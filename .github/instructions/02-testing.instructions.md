@@ -31,3 +31,10 @@ Formal Week 3 evaluations are evaluator-owned and run only after the baseline is
 Manual Canvas checks may supplement deterministic tests, but they do not replace contract and rule tests. Record only commands and outcomes that were actually run.
 
 Week03 regressions remain required while testing Week04. Any optional Gemini verification is a separately authorized, one-call check after offline checks are green.
+
+## Approved Week05 Training Planner testing
+
+- Follow `specs/002-brickpulse-training-agent/tasks.md` in order: write the approved focused expectation, observe the intended RED when applicable, implement the smallest change, then record GREEN and regressions contemporaneously.
+- Week05 routine tests are fake-first, injected-clock/timer based, credential-free, and network-free. Validate initial input, untrusted model proposals, tool arguments/results, and final output before any later action.
+- Assert zero provider/tool execution for rejected input or proposals; separately assert agent steps, provider attempts, and tool calls. Cover allowlist, injected context, repeated-action prevention, limits, deadlines, cancellation, retries/fallbacks, and safe terminal envelopes.
+- Preserve Week03 gameplay and Week04 Coach tests, including `/api/ai/advice` behavior. Do not make a live provider call for RED/GREEN or routine regression evidence.

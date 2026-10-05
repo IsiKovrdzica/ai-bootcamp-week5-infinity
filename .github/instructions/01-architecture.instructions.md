@@ -27,7 +27,15 @@ Keep these responsibilities separable when the scaffold is created. Exact file p
 - AI generation is accessed only through AiAdviceProvider; routine tests use the fake provider. The Gemini adapter is backend-only and optional live verification remains separate.
 - AI work must not run in updateGame, rendering, input handling, or an animation-frame path. Canvas rendering remains free of HTTP and provider behavior.
 - The backend may use the configured Gemini primary model and exactly one fixed, capability-tested Gemini fallback model only for the Week04 specification's normalized plain-404/500/502/503 provider-unavailable classes. Both calls share the same deadline and remain within the two-total-call limit.
-- No arbitrary model chain, second AI provider, browser-selected model, fallback for auth/safety/validation failures, second endpoint, database, authentication, deployment, streaming, agent, dashboard, or gameplay redesign is authorized.
+- No arbitrary model chain, second AI provider, browser-selected model, fallback for auth/safety/validation failures, database, authentication, deployment, streaming, dashboard, or gameplay redesign is authorized.
+
+## Approved Week05 Training Planner boundary
+
+- `specs/002-brickpulse-training-agent/spec.md` authorizes one additive, backend-owned bounded Training Planner alongside the unchanged Week04 Coach.
+- The only permitted Week05 route is `POST /api/ai/training-plan`; it accepts the existing exact terminal `GameSummary` and must not alter `/api/ai/advice` behavior.
+- The planner loop, provider attempts, deadlines, budgets, validation, tool allowlist, and safe projection are server-owned. The browser submits the summary and renders only validated public status/result data; it owns no provider, tool, budget, prompt, or configuration behavior.
+- The only Core tool is the deterministic, local, read-only `analyze_game_performance`. It receives application-injected validated context, cannot mutate game state, and has no filesystem, network, shell, database, or write capability.
+- Keep the Week05 provider boundary adjacent to Week04 and provider-neutral. Routine tests use injected fakes with no credentials or network; live verification remains separately gated by `tasks.md`.
 
 ## Change rules
 
