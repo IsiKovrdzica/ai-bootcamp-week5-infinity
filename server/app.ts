@@ -7,6 +7,7 @@ import {
   INVALID_GAME_SUMMARY_ERROR,
 } from '../src/ai/contracts.js'
 import type { AdviceService } from './ai/advice-service.js'
+import type { TrainingPlannerService } from './composition.js'
 import { validateGameSummary } from './ai/validation.js'
 
 export const MAX_REQUEST_BODY_BYTES = 16 * 1024
@@ -41,9 +42,19 @@ function unavailableResponse(): AppResponse {
   return jsonResponse(503, AI_ADVICE_UNAVAILABLE_ERROR)
 }
 
-export function createApp(service: AdviceService): AppHandler {
+function trainingRejectedResponse(run: unknown): AppResponse {
+  return jsonResponse(422, { run, error: { code: 'TRAINING_PLAN_REJECTED', message: 'Training plan could not be completed safely.' } })
+}
+
+function trainingUnavailableResponse(run: unknown): AppResponse {
+  return jsonResponse(503, { run, error: { code: 'TRAINING_PLAN_UNAVAILABLE', message: 'Training plan is temporarily unavailable. Please try again later.' } })
+}
+
+export function createApp(service: AdviceService, trainingPlanner?: TrainingPlannerService): AppHandler {
   return async (request) => {
-    if (request.path !== '/api/ai/advice') {
+    const isAdvice = request.path === '/api/ai/advice'
+    const isTrainingPlan = request.path === '/api/ai/training-plan'
+    if (!isAdvice && !isTrainingPlan) {
       return jsonResponse(404, { error: { code: 'NOT_FOUND' } })
     }
     if (request.method !== 'POST') {
@@ -63,6 +74,17 @@ export function createApp(service: AdviceService): AppHandler {
     const summaryValidation = validateGameSummary(parsedBody)
     if (!summaryValidation.ok) {
       return invalidSummaryResponse()
+    }
+
+    if (isTrainingPlan) {
+      if (!trainingPlanner) return jsonResponse(404, { error: { code: 'NOT_FOUND' } })
+      try {
+        const result = await trainingPlanner.createTrainingPlan(summaryValidation.value)
+        if (result.kind === 'completed') return jsonResponse(200, { run: result.run, plan: result.plan })
+        return result.kind === 'rejected' ? trainingRejectedResponse(result.run) : trainingUnavailableResponse(result.run)
+      } catch {
+        return trainingUnavailableResponse({ runId: 'unavailable', status: 'failed', stopReason: 'provider_failure', stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 })
+      }
     }
 
     try {
