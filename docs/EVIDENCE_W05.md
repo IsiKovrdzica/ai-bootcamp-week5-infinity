@@ -165,3 +165,21 @@ This factual post-commit evidence append intentionally leaves `docs/EVIDENCE_W05
 - Diff checks before this evidence append: `git diff --check` exited 0 (only LF-to-CRLF warnings); `git diff --stat` showed only the pre-existing uncommitted six-line G1 evidence addition because untracked Slice 2 files are not included; `git status --short` showed that evidence file plus the four untracked Slice 2 files. No `.env` or provider operation occurred.
 - Post-GREEN validator correction: a new exact-output validation test was written first and failed because a semantically equivalent result with reordered top-level keys was rejected by the implementation's serialization comparison. The validator now compares exact keys and each canonical field/evidence record directly while still rejecting `-0`; focused GREEN passed 2 files / 11 tests and `npm run typecheck` passed.
 - Final malformed-output correction: adding `undefined` to the result-validator rejection matrix produced a genuine RED (`Buffer.byteLength` received `undefined`). The size guard now safely rejects nonserializable/non-JSON values before exact validation. Final focused GREEN passed 2 files / 11 tests; required summary/game regression passed 3 files / 59 tests; typecheck passed.
+
+### G2 commit verification
+
+- Commit: `60aa5e4cf1f95a9832ee73a3a02fdb3a2a86f1ff` (`feat: add deterministic performance analysis tool`).
+- Git metadata contains exactly `Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>` once; Git trailer parsing returned `Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>`.
+- This factual post-commit evidence append is intentionally uncommitted. Slice 3 has not started.
+
+## Slice 3 — Scripted provider and success state machine
+
+### T30–T36 factual record
+
+- T30 inspection retained Week04 `AiAdviceProvider`, `FakeAiAdviceProvider`, `AdviceService`, and `AiUsageSink` unchanged. The new adjacent `AgentModelProvider` accepts one immutable phase request and one abort signal only. The orchestrator receives injected clock, ID/context-ID, timer/clear-timer, and sanitized event-sink seams.
+- T31/T32 tests were written before the Slice 3 production modules. The initial sandboxed focused command could not load Vite/esbuild and was not accepted as RED. The elevated run then showed the genuine absent `training-fake-provider` module. A test-fixture syntax error in the orchestrator test was corrected before it could be treated as behavior evidence.
+- Genuine REDs: absent fake/provider modules; queued resolve value mutation leaked into the fake script; injected deadline timer was not started. Implementations respectively added the one-attempt provider/fake, structured-cloned immutable resolve queue entries, and the injected deadline timer with terminal cleanup. The call-index/request-content assertion was corrected because call index is intentionally distinct while the retry request content is identical.
+- T33 adds only phase request/interface types and the offline scripted fake. It contains no provider SDK, retry loop, tool execution/policy, focus choice, or public-plan behavior. Snapshots contain only phase, step number, call index, and signal state.
+- T34 normal success trace: `awaiting_tool -> executing_tool -> awaiting_final -> terminal`; `progressVersion` `0 -> 1 -> 2`; exactly 2 logical steps, 2 provider attempts, 1 tool proposal, 1 registry execution, 1 validated tool result, and one validated application-rendered completed plan. Terminal state is frozen and rejects mutation in the focused test.
+- T35 GREEN: `npm test -- server/ai/training-fake-provider.test.ts server/ai/training-orchestrator.test.ts` passed 2 files / 5 tests. Required Week04 preservation command `npm test -- server/ai/fake-provider.test.ts server/ai/advice-service.test.ts server/ai/usage-log.test.ts` passed 3 files / 91 tests. `npm run typecheck` passed.
+- T36 review: no `@google/genai`/Gemini SDK import in the orchestrator; the emitted event shape has counters/phase/run ID only and does not carry summary, proposal/response, evidence values, final prose, raw errors, or chain-of-thought. Slice 3 changes do not modify Week03/Week04 source. No `.env` path was opened or altered and no provider/network call was made.
