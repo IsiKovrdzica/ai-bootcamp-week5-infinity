@@ -1,0 +1,10 @@
+export const TRAINING_FOCUSES = ['survival', 'efficiency', 'consistency'] as const
+export type TrainingFocus = (typeof TRAINING_FOCUSES)[number]
+export const TRAINING_CONFIDENCES = ['low', 'medium', 'high'] as const
+export type TrainingConfidence = (typeof TRAINING_CONFIDENCES)[number]
+export const TRAINING_EVIDENCE_IDS = ['game.outcome', 'game.bricks_destroyed', 'game.completion_rate', 'game.duration_seconds', 'game.bricks_per_minute', 'game.lives'] as const
+export type EvidenceId = (typeof TRAINING_EVIDENCE_IDS)[number]
+export const TRAINING_PLAN_STOP_REASONS = ['completed', 'invalid_model_proposal', 'unknown_tool', 'invalid_tool_arguments', 'invalid_tool_result', 'tool_failure', 'provider_failure', 'step_limit', 'tool_call_limit', 'provider_attempt_limit', 'total_deadline', 'repeated_action', 'invalid_final_output', 'cancelled'] as const
+export type TrainingPlanStopReason = (typeof TRAINING_PLAN_STOP_REASONS)[number]
+export type TrainingPlan = { summary: string; focus: TrainingFocus; recommendation: string; evidence: readonly { id: EvidenceId; finding: string }[]; confidence: TrainingConfidence; completed: true }
+export type PublicTrainingRun = { runId: string; status: 'completed' | 'stopped' | 'failed'; stopReason: TrainingPlanStopReason; stepCount: number; providerAttemptCount: number; toolCallCount: number; elapsedMs: number }

@@ -96,8 +96,52 @@ Root cause: the original `npm ci` command did not complete an installation in th
 
 No `.env` path was opened, read, searched, printed, modified, moved, deleted, or recreated during this investigation. No Gemini/provider request occurred.
 
+### T05 — Slice 0 commit verification
+
+| Command | Observed result | Status |
+|---|---|---|
+| `git commit -m "docs: authorize bounded training planner implementation" -m "Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>"` | Created commit `accb1d83163ce1fd49f3c8286efd6e2158d1eda7` with 19 approved Slice 0 files. | PASS |
+| `git log -1 --format='%H%n%B'; git show -s --format='%H%n%(trailers:key=Co-authored-by,valueonly)' HEAD` | Verified commit hash `accb1d83163ce1fd49f3c8286efd6e2158d1eda7`; commit body contains exactly `Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>` once, and Git trailer parsing returned `Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>`. | PASS |
+
+This factual post-commit evidence append intentionally leaves `docs/EVIDENCE_W05.md` modified. No additional commit was created. Slice 1 remains unstarted.
+
+## Slice 1 — Contracts and handwritten validators
+
+### T10–T16 factual record
+
+- T10 inspection: retained the browser-safe `src/ai/contracts.ts` ownership, the adjacent server `ValidationResult`/exact-key handwritten-validator convention, and the unchanged Week04 `AiAdviceProvider` boundary.
+- T11–T13 RED: `npm test -- src/ai/training-contracts.test.ts server/ai/training-validation.test.ts` failed because `training-contracts.js` and `training-validation.js` did not exist; Vitest collected no tests. This was the intended missing-module RED.
+- T14 implementation: added browser-safe training domains/public plan types, adjacent provider-neutral server contract types/limits, and handwritten initial-summary, closed-proposal/argument, and grounded-final validation. No tool execution, registry, orchestrator, endpoint, adapter, or frontend behavior was added.
+- Focused GREEN: the same command passed 2 files / 4 tests.
+- T15 regression: `npm test -- server/ai/validation.test.ts src/ai/frontend-boundary.test.ts` passed 2 files / 35 tests. `npm run typecheck` passed after one internal type-only correction to the already runtime-validated evidence-reference predicate.
+- T16 review: inspected the Slice 1 boundary: exact-key guards, 8 KiB proposal ceiling, 1–64 ASCII context ID, closed tool/action/focus/confidence domains, no model game facts, and no server imports in the browser contract. Week03/Week04 source and `/api/ai/advice` were not modified; no secret or provider operation occurred.
+
+### G1 human-review correction
+
+- Added review-requested coverage for malformed/oversized/wrong-phase/refusal proposals; unknown, missing, extra, fact-bearing, invalid-context, and instruction-bearing arguments; ordered final evidence union; multiple supported model-selected focuses; Unicode code-point plan bounds; byte/exact-key checks; and bounded public run metadata projection.
+- Genuine RED: `npm test -- server/ai/training-validation.test.ts` produced 3 failures: untrusted `final` shape accepted in `produce_final`; extraneous top-level evidence accepted; public validators absent. Corrected with exact nested final shape parsing, exact ordered unique union equality, and handwritten public plan/run validators.
+- GREEN/regression: `npm test -- src/ai/training-contracts.test.ts server/ai/training-validation.test.ts server/ai/validation.test.ts src/ai/frontend-boundary.test.ts` passed 4 files / 40 tests; `npm run typecheck` passed; `git diff --check` passed with LF-to-CRLF warnings only.
+- Review conclusion: no heuristic focus selection, no backend import in browser contract, no raw diagnostics/secrets, no W03/W04 source change, and no `.env` or provider access.
+
+### Final G1 renderer/preflight correction
+
+- Coverage completion: explicit `PLAYING` and semantically nonterminal `GAME_OVER` summaries were added and immediately rejected by the existing handwritten initial-summary validator.
+- Executable zero-call proof is explicitly deferred: Slice 1 contains pure contracts/validators and no legitimate provider/tool invocation seam. Adding one would prematurely implement later orchestration. `T41 — Invalid-proposal and preflight RED tests` owns the counting provider/tool preflight proof after the orchestrator seam exists.
+- Focused RED: `npm test -- server/ai/training-validation.test.ts` passed 3 tests and failed 2 because arbitrary public prose was accepted and `renderPublicTrainingPlan` did not exist.
+- Implementation: added fixed application-owned factual templates and `renderPublicTrainingPlan`, which first validates the normalized final proposal, then renders only from its supported focus/action/references and the current validated `PerformanceAnalysisResult`. `validatePublicTrainingPlan` now requires exact template equality as well as existing code-point and 2 KiB limits.
+- Templates: summary `The completed game supports a[n] <focus> training focus.`; recommendations are fixed per validated action/focus; findings are `<factual metric label>: <canonical validated evidence value>.` No quality judgment, causal claim, or focus selector is present.
+- GREEN: focused Slice 1 command passed 2 files / 6 tests; W04 validation/frontend-boundary regression passed 2 files / 35 tests; typecheck passed; `git diff --check` passed with LF-to-CRLF warnings only.
+
+### Final nested-proposal validation correction
+
+- Focused RED: seven exact-key `final` proposals with respectively numeric focus, non-array summary IDs, malformed recommendation, non-array recommendation IDs, non-array top-level IDs, invalid confidence, or `completed: false` were all incorrectly returned as `ok: true` by the shallow produce-final branch.
+- Correction: a handwritten structural parser now validates every nested field and closed domain, then constructs a fresh `NormalizedModelProposal`. Current-run evidence availability, ordered-union equality, and focus-support semantics remain in `validateTrainingFinalProposal`.
+- Code-point evidence clarification: the public-plan test rejects both 200-emoji and 201-emoji summaries because neither equals the fixed application template; the 201 case also exceeds the 200-code-point ceiling. No accepted 200-code-point boundary result is claimed.
+
 ## Deferred gates
 
-- Slice 0 human approval/commit gate (G0): pending.
-- No Week05 commit hash exists yet.
+- Slice 0 human approval/commit gate (G0): approved and completed.
+- Slice 0 commit: `accb1d83163ce1fd49f3c8286efd6e2158d1eda7`.
+- Slice 1 implementation/review (G1): approved and ready for commit.
+- Executable invalid-input zero provider/tool call proof remains deferred to T41.
 - No live provider verification was attempted.
