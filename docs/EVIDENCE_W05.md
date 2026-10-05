@@ -145,3 +145,23 @@ This factual post-commit evidence append intentionally leaves `docs/EVIDENCE_W05
 - Slice 1 implementation/review (G1): approved and ready for commit.
 - Executable invalid-input zero provider/tool call proof remains deferred to T41.
 - No live provider verification was attempted.
+
+### G1 commit verification
+
+- Commit: `68078f843774ba20be7fcddce2af45af2c18364a` (`test/feat: define training planner contracts and validation`).
+- Git metadata contains exactly `Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>` once; trailer parsing returned `Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>`.
+- This factual post-commit evidence append is intentionally uncommitted. Slice 2 has not started.
+
+## Slice 2 — Tool registry and deterministic analysis
+
+### T20–T25 factual record
+
+- T20 inspection: retained `server/ai/contracts.ts` as the source of Week03 constants and `server/ai/game-summary-fixtures.ts` as the terminal-summary fixture seam. The new registry exposes an injected `execute` binding and callback counter seam. The reviewed tool modules import only local contracts/tool code; they have no filesystem, environment, network, shell, database, provider, persistence, browser, or game-mutation dependency.
+- T21–T22 tests were written before the new production modules. The first sandboxed `npm test -- server/ai/training-tool.test.ts server/ai/training-tool-registry.test.ts` could not start because sandboxed esbuild could not read `vite.config.ts`; this was not accepted as RED. The approved elevated rerun failed meaningfully: both suites could not resolve the absent `./training-tool.js` module (2 failed files, no collected tests).
+- T23 implementation: added a pure deterministic analysis function, handwritten exact-result recomputation/projection validator, and a frozen single-entry case-sensitive registry. It validates exact matching arguments before calling the binding, bounds execution to 100ms or remaining time, validates unknown output before projection, and creates fresh result/evidence objects.
+- Focused GREEN: `npm test -- server/ai/training-tool.test.ts server/ai/training-tool-registry.test.ts` passed 2 files / 10 tests. The timeout case was added after the initial implementation and passed immediately because the already-implemented wrapper correctly used the smaller remaining deadline; no RED is claimed for that post-implementation coverage addition.
+- T24 regression: `npm test -- server/ai/validation.test.ts src/ai/game-summary.test.ts src/game.test.ts` passed 3 files / 59 tests. `npm run typecheck` passed.
+- T25 review: unknown tool and invalid/missing/extra/fact-bearing/instruction-bearing/wrong-context arguments all return before injected binding execution and before its supplied tool-call counter increments. Result validation rejects malformed, nonfinite, inconsistent, noncanonical, extra-field, and oversized candidates before producing a fresh normalized projection. No focus, recommendation, threshold, provider behavior, generated-code execution, or game mutation is present.
+- Diff checks before this evidence append: `git diff --check` exited 0 (only LF-to-CRLF warnings); `git diff --stat` showed only the pre-existing uncommitted six-line G1 evidence addition because untracked Slice 2 files are not included; `git status --short` showed that evidence file plus the four untracked Slice 2 files. No `.env` or provider operation occurred.
+- Post-GREEN validator correction: a new exact-output validation test was written first and failed because a semantically equivalent result with reordered top-level keys was rejected by the implementation's serialization comparison. The validator now compares exact keys and each canonical field/evidence record directly while still rejecting `-0`; focused GREEN passed 2 files / 11 tests and `npm run typecheck` passed.
+- Final malformed-output correction: adding `undefined` to the result-validator rejection matrix produced a genuine RED (`Buffer.byteLength` received `undefined`). The size guard now safely rejects nonserializable/non-JSON values before exact validation. Final focused GREEN passed 2 files / 11 tests; required summary/game regression passed 3 files / 59 tests; typecheck passed.
