@@ -5,8 +5,23 @@ import { TrainingActionGuard, TrainingAgentOrchestrator, trainingToolFingerprint
 import { analyzeGamePerformance } from './training-tool.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 import { ProviderFailure } from './provider.js'
+import { createTrainingUsageSink } from './training-usage-log.js'
 
 describe('T32 minimal successful training run', () => {
+  it('attaches safe token counts to their exact primary and fixed-fallback attempts without emitting raw provider data', async () => {
+    const events: unknown[] = []; let primaryCalls = 0
+    const primary = { async generateStep(_request: unknown, options: { signal: AbortSignal; onTokenUsage?: (usage: unknown) => void }) { primaryCalls++; options.onTokenUsage?.(primaryCalls === 1 ? { input: 13, output: 5, raw: 'RAW_USAGE_SENTINEL' } : { input: 34, output: 13, response: 'RAW_RESPONSE_SENTINEL' }); if (primaryCalls === 1) throw new ProviderFailure('provider_unavailable'); return { kind: 'final', plan: { focus: 'consistency', summaryEvidenceIds: ['game.outcome'], recommendation: { action: 'repeat_completed_clear', evidenceIds: ['game.outcome', 'game.completion_rate'] }, evidenceIds: ['game.outcome', 'game.completion_rate'], confidence: 'high', completed: true } } } }
+    const fallback = { async generateStep(_request: unknown, options: { signal: AbortSignal; onTokenUsage?: (usage: unknown) => void }) { options.onTokenUsage?.({ input: 21, output: 8, apiKey: 'KEY_SENTINEL', prompt: 'PROMPT_SENTINEL', evidence: 'EVIDENCE_SENTINEL' }); return { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } } } }
+    const result = await new TrainingAgentOrchestrator({ provider: primary, fallbackProvider: fallback, registry: createTrainingToolRegistry(), clock: () => 0, createId: () => 'run_1', createContextId: () => 'ctx_1', sleep: async () => {}, eventSink: createTrainingUsageSink(event => events.push(event)) }).run(validWonSummary)
+    expect(result.state.status).toBe('completed')
+    expect(events.filter((event: any) => event.kind === 'provider_attempt_settled')).toEqual([
+      expect.objectContaining({ attemptKind: 'initial', providerCategory: 'primary', outcome: 'failure', tokenUsage: { input: 13, output: 5 } }),
+      expect.objectContaining({ attemptKind: 'fallback', providerCategory: 'fixed_fallback', outcome: 'success', tokenUsage: { input: 21, output: 8 } }),
+      expect.objectContaining({ attemptKind: 'initial', providerCategory: 'primary', outcome: 'success', tokenUsage: { input: 34, output: 13 } }),
+    ])
+    const serialized = JSON.stringify(events)
+    for (const forbidden of ['RAW_USAGE_SENTINEL', 'RAW_RESPONSE_SENTINEL', 'KEY_SENTINEL', 'PROMPT_SENTINEL', 'EVIDENCE_SENTINEL', 'apiKey', 'prompt', 'evidence', 'response']) expect(serialized).not.toContain(forbidden)
+  })
   it('runs the exact two-step, one-tool success trace and renders only a safe plan', async () => {
     let executions = 0
     let timersStarted = 0

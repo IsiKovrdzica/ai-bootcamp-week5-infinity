@@ -1,10 +1,13 @@
 import { createAdviceService, type AdviceService } from './ai/advice-service.js'
 import { GEMINI_FALLBACK_MODEL, readGeminiConfig } from './ai/config.js'
 import { GeminiAiAdviceProvider } from './ai/gemini-provider.js'
+import { GeminiTrainingStepProvider } from './ai/training-gemini-provider.js'
+import { TrainingAgentOrchestrator } from './ai/training-orchestrator.js'
+import { createTrainingToolRegistry } from './ai/training-tool-registry.js'
 import type { TrainingPlan } from '../src/ai/training-contracts.js'
 import type { PublicTrainingRun } from '../src/ai/training-contracts.js'
-import type { TrainingAgentOrchestrator } from './ai/training-orchestrator.js'
 import type { GeminiConfig } from './ai/config.js'
+import type { AgentModelProvider } from './ai/training-provider.js'
 
 export type TrainingPlannerServiceResult =
   | { readonly kind: 'completed'; readonly run: PublicTrainingRun; readonly plan: TrainingPlan }
@@ -56,8 +59,21 @@ export function createProductionTrainingPlannerService(
   factory?: TrainingPlannerServiceFactory,
 ): TrainingPlannerService {
   const configuration = readGeminiConfig(environment)
-  if (!configuration.ok || !factory) return unavailableTrainingPlannerService
-  return factory(configuration.value, GEMINI_FALLBACK_MODEL)
+  if (!configuration.ok) return unavailableTrainingPlannerService
+  return (factory ?? createGeminiTrainingPlannerService)(configuration.value, GEMINI_FALLBACK_MODEL)
+}
+
+export function createGeminiTrainingPlannerService(
+  configuration: Readonly<GeminiConfig>,
+  fallbackModel: string,
+  createProvider: (value: Readonly<GeminiConfig>) => AgentModelProvider = value => new GeminiTrainingStepProvider(value),
+): TrainingPlannerService {
+  const id = () => globalThis.crypto.randomUUID().replaceAll('-', '')
+  return createTrainingPlannerService(new TrainingAgentOrchestrator({
+    provider: createProvider(configuration),
+    fallbackProvider: createProvider({ apiKey: configuration.apiKey, model: fallbackModel }),
+    registry: createTrainingToolRegistry(), clock: () => Date.now(), createId: id, createContextId: id,
+  }))
 }
 
 export function createProductionAdviceService(

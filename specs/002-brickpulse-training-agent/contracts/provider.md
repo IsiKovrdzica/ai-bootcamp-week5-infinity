@@ -46,13 +46,30 @@ The request uses exact keys and immutable validated projections. In `select_tool
 ## Interface
 
 ```ts
+type SafeTokenUsage = Readonly<{
+  input?: number
+  output?: number
+}>
+
 interface AgentModelProvider {
   generateStep(
     request: Readonly<ModelStepRequest>,
-    options: { signal: AbortSignal },
+    options: {
+      signal: AbortSignal
+      onTokenUsage?: (usage: SafeTokenUsage) => void
+    },
   ): Promise<unknown>
 }
 ```
+
+`SafeTokenUsage` is an optional, sanitized, provider-neutral observability
+projection for the current provider attempt. It is not model or business
+output, is not part of `ModelStepResponse` or a public HTTP response, and
+contains no raw provider object, prompt, response, error, configuration, or
+secret data. It may contain only approved finite non-negative numeric
+`input`/`output` counts, must be attributed only to the producing provider
+attempt, and must not affect routing or run success/failure if an observer
+throws.
 
 The provider:
 

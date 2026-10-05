@@ -3,7 +3,7 @@ import type { TrainingPlan, TrainingPlanStopReason } from '../../src/ai/training
 import type { PerformanceAnalysisResult } from './training-contracts.js'
 import { renderPublicTrainingPlan, validateTrainingFinalProposal, validateTrainingInitialSummary, validateTrainingModelProposal } from './training-validation.js'
 import { ProviderFailure } from './provider.js'
-import type { AgentModelProvider, ModelStepRequest, ToolDescriptor } from './training-provider.js'
+import type { AgentModelProvider, ModelStepRequest, SafeTokenUsage, ToolDescriptor } from './training-provider.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 type RunPhase='awaiting_tool'|'executing_tool'|'awaiting_final'|'terminal';
  type RunStatus='running'|'completed'|'stopped'|'failed'
@@ -39,6 +39,7 @@ readonly elapsedMs:number;
 readonly attemptKind?:'initial'|'retry'|'fallback';
 readonly providerCategory?:'primary'|'fixed_fallback';
 readonly attemptLatencyMs?:number;
+readonly tokenUsage?:SafeTokenUsage;
 readonly outcome?:'success'|'failure'|'rejected'|'validated';
 readonly toolName?:'analyze_game_performance';
 readonly stopReason?:TrainingPlanStopReason}
@@ -79,7 +80,7 @@ export class TrainingAgentOrchestrator { constructor(private readonly deps:Train
  let startedAt=0;
  let state:TrainingRunState={runId,status:'running',phase:'awaiting_tool',stepCount:0,providerAttemptCount:0,currentStepAttemptCount:0,retryAttemptCount:0,fallbackAttemptCount:0,toolProposalCount:0,toolCallCount:0,validatedToolResultCount:0,progressVersion:0,...this.deps.initialCounters};
  const transitions:RunPhase[]=['awaiting_tool'],progressVersions:(0|1|2)[]=[0];
- const emit=(kind:TrainingEvent['kind'],detail:Pick<TrainingEvent,'attemptKind'|'providerCategory'|'attemptLatencyMs'|'outcome'|'toolName'>={})=>{const event=Object.freeze({kind,runId,phase:state.phase,status:state.status,stepCount:state.stepCount,providerAttemptCount:state.providerAttemptCount,currentStepAttemptCount:state.currentStepAttemptCount,retryAttemptCount:state.retryAttemptCount,fallbackAttemptCount:state.fallbackAttemptCount,toolProposalCount:state.toolProposalCount,toolCallCount:state.toolCallCount,validatedToolResultCount:state.validatedToolResultCount,progressVersion:state.progressVersion,elapsedMs:Math.max(0,Math.min(30000,Math.floor(this.deps.clock()-startedAt))),...(state.stopReason?{stopReason:state.stopReason}:{}),...detail} satisfies TrainingEvent);try{this.deps.eventSink?.(event)}catch{/* Observability is non-authoritative and must not change run routing. */}};
+ const emit=(kind:TrainingEvent['kind'],detail:Pick<TrainingEvent,'attemptKind'|'providerCategory'|'attemptLatencyMs'|'outcome'|'toolName'|'tokenUsage'>={})=>{const event=Object.freeze({kind,runId,phase:state.phase,status:state.status,stepCount:state.stepCount,providerAttemptCount:state.providerAttemptCount,currentStepAttemptCount:state.currentStepAttemptCount,retryAttemptCount:state.retryAttemptCount,fallbackAttemptCount:state.fallbackAttemptCount,toolProposalCount:state.toolProposalCount,toolCallCount:state.toolCallCount,validatedToolResultCount:state.validatedToolResultCount,progressVersion:state.progressVersion,elapsedMs:Math.max(0,Math.min(30000,Math.floor(this.deps.clock()-startedAt))),...(state.stopReason?{stopReason:state.stopReason}:{}),...detail} satisfies TrainingEvent);try{this.deps.eventSink?.(event)}catch{/* Observability is non-authoritative and must not change run routing. */}};
  const finish=(status:Exclude<RunStatus,'running'>,reason:TrainingPlanStopReason,plan?:TrainingPlan)=>{if(state.phase==='terminal')return;
 state=frozen({...state,status,phase:'terminal',stopReason:reason,...(plan?{finalResult:plan}:{})});
 transitions.push('terminal');
@@ -115,16 +116,17 @@ return}const attemptAbort=new AbortController(),link=()=>attemptAbort.abort(),at
 runAbort.signal.addEventListener('abort',link,{once:true});
 const attemptTimer=setTimer(()=>attemptAbort.abort(),attemptTimeout);
 state={...state,providerAttemptCount:state.providerAttemptCount+1,currentStepAttemptCount:state.currentStepAttemptCount+1};
-const attemptStartedAt=this.deps.clock();
-try{const v=await provider.generateStep(req,{signal:attemptAbort.signal});
+const attemptStartedAt=this.deps.clock(); let tokenUsage:SafeTokenUsage|undefined;
+const acceptTokenUsage=(usage:SafeTokenUsage)=>{const input=typeof usage.input==='number'&&Number.isFinite(usage.input)&&usage.input>=0?usage.input:undefined,output=typeof usage.output==='number'&&Number.isFinite(usage.output)&&usage.output>=0?usage.output:undefined;if(input!==undefined||output!==undefined)tokenUsage=Object.freeze({... (input!==undefined?{input}:{}),...(output!==undefined?{output}:{})})};
+try{const v=await provider.generateStep(req,{signal:attemptAbort.signal,onTokenUsage:acceptTokenUsage});
 clearTimer(attemptTimer);
 runAbort.signal.removeEventListener('abort',link);
-emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'success'});
+emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'success',...(tokenUsage?{tokenUsage}:{})});
 if(stopped()){const r=stopped()!;
 finish(r==='cancelled'?'stopped':'failed',r);
 return}return v}catch(e){clearTimer(attemptTimer);
 runAbort.signal.removeEventListener('abort',link);
-emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'failure'});
+emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'failure',...(tokenUsage?{tokenUsage}:{})});
 if(deadlineExpired){finish('failed','total_deadline');
 return}if(this.deps.signal?.aborted){finish('stopped','cancelled');
 return}if(attemptAbort.signal.aborted){finish('failed','provider_failure');
