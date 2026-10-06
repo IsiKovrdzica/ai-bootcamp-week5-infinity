@@ -1,6 +1,6 @@
-# Week 05 Offline Acceptance Evaluations
+# Week 05 Acceptance Evaluations
 
-Final Slice 8 evaluation on 2026-10-06 was entirely offline. The evaluator uses scripted providers, a deterministic local registry/tool, and injected time/timers. It does not instantiate Gemini, load provider configuration, require credentials, or perform network I/O. A19 is **NOT STARTED** under Slice 9.
+Final Slice 8 evaluation on 2026-10-06 was entirely offline. The evaluator uses scripted providers, a deterministic local registry/tool, and injected time/timers. It does not instantiate Gemini, load provider configuration, require credentials, or perform network I/O. The A1–A18 matrix below remains that offline record.
 
 | ID | Literal proof and observed outcome | Proof | Status |
 |---|---|---|---|
@@ -26,3 +26,7 @@ Final Slice 8 evaluation on 2026-10-06 was entirely offline. The evaluator uses 
 An earlier 18-test evaluator passed before human review found literal traceability gaps. The final evaluator has 34 executable cases; test count is not substituted for the literal matrix.
 
 Second traceability and hostile review found no remaining partial, wrong-scenario, placeholder, missing-proof, or unexplained implementation-defect classification.
+
+## A19 bounded live-verification handoff
+
+A19 was completed after the offline matrix and its explicit human gate. One replacement provider-backed `npm run verify:training:live` invocation on 2026-10-06 completed with two logical steps, four provider attempts, one local tool call, stop reason `completed`, and validation result **PASS**. The preceding invocation was classified **SKIPPED** before the harness loaded, so it made no provider or network request. The full sanitized chronology and G9 handoff audit are recorded in [`docs/EVIDENCE_W05.md`](EVIDENCE_W05.md).

@@ -2,6 +2,8 @@
 
 This is a future execution and evidence checklist. No command below was run as part of the PLAN gate, and no result is claimed.
 
+> Historical status: this checklist records the pre-implementation plan and remains intentionally unchanged below. Week05 was subsequently implemented and handed off. For actual commands and results, see [`docs/EVIDENCE_W05.md`](../../docs/EVIDENCE_W05.md), [`docs/AGENT_EVALS_W05.md`](../../docs/AGENT_EVALS_W05.md), and [`docs/AI_USAGE_LOG_W05.md`](../../docs/AI_USAGE_LOG_W05.md).
+
 ## Prerequisites and gates
 
 - Human-pair approval of the approved spec, this plan/contracts, and future `tasks.md`.

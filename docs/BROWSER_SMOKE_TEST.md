@@ -27,6 +27,16 @@ Open the Vite URL, normally `http://127.0.0.1:5173/`, in a browser.
 4. Hold `ArrowRight` briefly, then release it. Confirm the paddle responds while staying inside the game area.
 5. Optionally press `A` and `D` briefly to check the alternate movement controls.
 
+## Manual terminal AI scenarios
+
+These scenarios supplement the Canvas-only automated smoke check. They require a configured backend and are not a substitute for the fake-first test suite.
+
+1. Finish a game as either `WON` or `GAME_OVER`. Confirm both **ASK AI COACH** and **CREATE TRAINING PLAN** are visible, and neither starts automatically.
+2. Select **CREATE TRAINING PLAN** once. Confirm the pending status is accessible, repeated clicks are disabled while it is pending, and a successful response renders only the validated summary, focus, recommendation, and evidence.
+3. Exercise a safe planner failure through an injected/stubbed backend response. Confirm no partial plan, provider diagnostic, raw model output, or internal error is rendered.
+4. Start a planner request and restart the game before it settles. Confirm the planner area clears, the request is aborted or ignored when stale, and normal gameplay remains usable.
+5. Repeat the terminal-state check for the other outcome and confirm **ASK AI COACH** remains independently usable.
+
 ## Review execution
 
 - **Date:** 2026-09-21

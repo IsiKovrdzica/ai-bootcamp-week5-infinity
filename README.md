@@ -14,7 +14,7 @@ For Week03 browser play only:
 npm run dev -- --host 127.0.0.1
 ```
 
-For the Week04 frontend and TypeScript backend together, configure the environment below and run:
+For the Week04 AI Coach and Week05 Training Planner with the TypeScript backend, configure the environment below and run:
 
 ```bash
 npm run dev:all
@@ -48,6 +48,20 @@ Gemini reliability is deliberately bounded:
 - 400, 401, 403, other 5xx, and auth, configuration, safety, cancellation, malformed-output, and application-validation failures are terminal.
 - Gemini SDK internal retries are disabled with `retryOptions.attempts = 1`.
 
+## Week05: Bounded Training Planner
+
+After a `WON` or `GAME_OVER` result, the player can explicitly select **CREATE TRAINING PLAN**. The browser sends the same validated terminal game summary to `POST /api/ai/training-plan`; it never owns provider selection, prompts, tools, retries, or run budgets.
+
+The backend owns one bounded workflow: it validates the summary, accepts only a proposal for the allowlisted local read-only `analyze_game_performance` tool, validates the tool result, then validates a later structured plan before returning it. A completed plan contains a summary, one focus, one next-game recommendation, and evidence references from that run. Invalid input, proposals, tool results, provider failures, deadlines, and stale browser responses resolve to safe non-partial states.
+
+The run is capped at three model steps, two tool calls, two provider attempts per step, six provider attempts per run, 15 seconds per provider attempt, and 30 seconds total. Routine verification is fake-first and credential-free. The separately gated live harness is explicit-only:
+
+```bash
+npm run verify:training:live
+```
+
+It is not part of `npm test`, build, smoke, development, or startup commands. Its completed limited-live result is recorded in [`docs/EVIDENCE_W05.md`](docs/EVIDENCE_W05.md).
+
 ## Verification commands
 
 Routine verification is offline and fake-first; it does not require Gemini credentials or make provider calls:
@@ -74,6 +88,12 @@ npm test -- evals/week3-holdout.test.ts
 ```
 
 Controlled live Gemini checks are separate manual actions that require `GEMINI_API_KEY`; they are not part of the ordinary deterministic flow. Their factual results, including the failed primary check and the separate successful fallback capability check, are recorded in [`docs/EVIDENCE_W04.md`](docs/EVIDENCE_W04.md).
+
+The Week05 acceptance evaluator can also be run directly, without credentials or network access:
+
+```bash
+npm test -- evals/week5-training-agent.test.ts
+```
 
 The smoke command uses an installed system Chrome/Chromium when available; otherwise install Playwright's Chromium once with `npx playwright install chromium`. The temporary automation server stops when the command finishes. Use `npm run dev` for manual play. Additional manual scenarios are documented in [`docs/BROWSER_SMOKE_TEST.md`](docs/BROWSER_SMOKE_TEST.md).
 
@@ -108,6 +128,16 @@ and its browser evidence artifact.
 - [`provider.md`](specs/001-brickpulse-ai-coach/contracts/provider.md) — provider boundary contract.
 - [`docs/EVIDENCE_W04.md`](docs/EVIDENCE_W04.md) — verification evidence and live-check limitations.
 - [`docs/AI_USAGE_LOG.md`](docs/AI_USAGE_LOG.md) — factual record of meaningful AI-assisted work and outcomes.
+
+### Week05 Training Planner
+
+- [`spec.md`](specs/002-brickpulse-training-agent/spec.md) — bounded Training Planner requirements.
+- [`plan.md`](specs/002-brickpulse-training-agent/plan.md) — architecture and implementation plan.
+- [`tasks.md`](specs/002-brickpulse-training-agent/tasks.md) — execution, verification, and live-gate record.
+- [`tool.md`](specs/002-brickpulse-training-agent/contracts/tool.md) — deterministic analysis-tool contract.
+- [`docs/AGENT_EVALS_W05.md`](docs/AGENT_EVALS_W05.md) — offline A1–A18 acceptance matrix and A19 handoff status.
+- [`docs/EVIDENCE_W05.md`](docs/EVIDENCE_W05.md) — factual offline and bounded-live verification evidence.
+- [`docs/AI_USAGE_LOG_W05.md`](docs/AI_USAGE_LOG_W05.md) — factual record of meaningful AI-assisted Week05 work.
 
 Implementation and browser code are under `src/`, backend code is under `server/`, and evaluator-owned tests are under `evals/`.
 
