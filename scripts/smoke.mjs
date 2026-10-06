@@ -117,6 +117,51 @@ const checks = [
       return current && Math.hypot(current.x - previous.x, current.y - previous.y) > 8
     }, before, { timeout: 3000 })
   }],
+  ['Training Planner is explicit, accessible, safe, independent, and cleared on restart', async (page) => {
+    let plannerRequests = 0
+    await page.route('**/api/ai/training-plan', async (route) => {
+      plannerRequests += 1
+      await delay(100)
+      await route.fulfill({
+        status: plannerRequests === 1 ? 200 : 503,
+        contentType: 'application/json',
+        body: JSON.stringify(plannerRequests === 1
+          ? { run: { runId: 'run_1', status: 'completed', stopReason: 'completed', stepCount: 2, providerAttemptCount: 2, toolCallCount: 1, elapsedMs: 8 }, plan: { summary: 'A safe plan.', focus: 'efficiency', recommendation: 'Use the measured pace.', evidence: [{ id: 'game.bricks_per_minute', finding: 'Measured pace is available.' }], confidence: 'medium', completed: true } }
+          : { run: { runId: 'run_2', status: 'failed', stopReason: 'provider_failure', stepCount: 1, providerAttemptCount: 1, toolCallCount: 0, elapsedMs: 8 }, error: { code: 'TRAINING_PLAN_UNAVAILABLE', message: 'Training plan is temporarily unavailable. Please try again later.' } }),
+      })
+    })
+    const planner = page.locator('#training-planner')
+    const plannerButton = page.locator('#create-training-plan')
+    const coachButton = page.locator('#ask-ai-coach')
+    await page.evaluate(() => window.__brickPulseSmoke?.complete('WON'))
+    await planner.waitFor({ state: 'visible', timeout: 1000 })
+    assert(await plannerButton.isEnabled(), 'planner must be enabled for WON')
+    assert(plannerRequests === 0, 'terminal transition must not request a plan automatically')
+    assert(await coachButton.isEnabled(), 'Coach must remain independently available')
+    await plannerButton.click()
+    await page.waitForFunction(() => document.querySelector('#training-planner-status')?.textContent === 'CREATING TRAINING PLAN...')
+    assert(await plannerButton.isDisabled(), 'planner must be disabled while pending')
+    assert((await page.locator('#training-planner-status').getAttribute('role')) === 'status', 'planner pending status must be accessible')
+    await page.waitForFunction(() => document.querySelector('#training-plan-summary')?.textContent === 'A safe plan.')
+    assert(plannerRequests === 1, 'only planner click may start the planner flow')
+    await plannerButton.click()
+    await page.waitForFunction(() => document.querySelector('#training-planner-status')?.textContent === 'Training plan is temporarily unavailable. Please try again later.')
+    assert((await page.locator('#training-plan-summary').textContent()) === '', 'failure must not retain partial plan data')
+    await page.evaluate(() => window.__brickPulseSmoke?.restart())
+    assert(await planner.isHidden(), 'restart must hide planner output')
+    assert((await page.locator('#training-planner-status').textContent()) === '', 'restart must clear planner status')
+    await page.evaluate(() => window.__brickPulseSmoke?.complete('GAME_OVER'))
+    await planner.waitFor({ state: 'visible', timeout: 1000 })
+    assert(await plannerButton.isEnabled(), 'planner must be enabled for GAME_OVER')
+    assert(plannerRequests === 2, 'GAME_OVER transition must not request a plan automatically')
+    await page.evaluate(() => window.__brickPulseSmoke?.restart())
+    await page.evaluate(() => window.__brickPulseSmoke?.complete('WON'))
+    await plannerButton.click()
+    await page.evaluate(() => window.__brickPulseSmoke?.restart())
+    await page.waitForTimeout(150)
+    assert(await planner.isHidden(), 'late planner settlement must not repopulate a restarted game')
+    assert((await page.locator('#training-plan-summary').textContent()) === '', 'late planner settlement must not render a plan')
+  }],
   ['browser has no uncaught errors', async (_page, errors) => {
     assert(errors.length === 0, errors.join('\n'))
   }],

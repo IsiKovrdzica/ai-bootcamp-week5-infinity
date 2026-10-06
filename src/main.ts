@@ -1,6 +1,8 @@
 import './style.css'
 import { createAdviceTransport } from './ai/api-client'
 import { CoachController, type CoachState } from './ai/coach-controller'
+import { createTrainingPlanTransport } from './ai/training-api-client'
+import { TrainingController, type TrainingState } from './ai/training-controller'
 import { deriveGameSummary } from './ai/game-summary'
 import { DEFAULT_CONFIG } from './config'
 import { createGame, updateGame } from './game'
@@ -24,6 +26,13 @@ const coachStatus = document.querySelector<HTMLParagraphElement>('#ai-coach-stat
 const coachSummary = document.querySelector<HTMLParagraphElement>('#ai-coach-summary')
 const coachRecommendation = document.querySelector<HTMLParagraphElement>('#ai-coach-recommendation')
 const coachCategory = document.querySelector<HTMLParagraphElement>('#ai-coach-category')
+const plannerElement = document.querySelector<HTMLElement>('#training-planner')
+const plannerButton = document.querySelector<HTMLButtonElement>('#create-training-plan')
+const plannerStatus = document.querySelector<HTMLParagraphElement>('#training-planner-status')
+const plannerSummary = document.querySelector<HTMLParagraphElement>('#training-plan-summary')
+const plannerFocus = document.querySelector<HTMLParagraphElement>('#training-plan-focus')
+const plannerRecommendation = document.querySelector<HTMLParagraphElement>('#training-plan-recommendation')
+const plannerEvidence = document.querySelector<HTMLUListElement>('#training-plan-evidence')
 
 if (
   !canvas ||
@@ -33,7 +42,7 @@ if (
   !coachStatus ||
   !coachSummary ||
   !coachRecommendation ||
-  !coachCategory
+  !coachCategory || !plannerElement || !plannerButton || !plannerStatus || !plannerSummary || !plannerFocus || !plannerRecommendation || !plannerEvidence
 ) {
   throw new Error('Required page elements are missing.')
 }
@@ -60,7 +69,12 @@ if (!context) {
         coachCategory,
       ),
     })
+    const plannerController = new TrainingController({
+      transport: createTrainingPlanTransport(fetch),
+      onStateChange: (plannerState) => renderTrainingState(plannerState, plannerElement, plannerButton, plannerStatus, plannerSummary, plannerFocus, plannerRecommendation, plannerEvidence),
+    })
     coachButton.addEventListener('click', () => controller.requestAdvice())
+    plannerButton.addEventListener('click', () => plannerController.requestPlan())
     let previousTime = performance.now()
     let previousStatus = state.status
 
@@ -75,12 +89,13 @@ if (!context) {
             state.lives = 0
           }
           const summary = deriveGameSummary(state)
-          if (summary) controller.showTerminal(summary)
+          if (summary) { controller.showTerminal(summary); plannerController.showTerminal(summary) }
           previousStatus = state.status
         },
         restart: () => {
           updateGame(state, { move: 0, start: true }, 0)
           controller.restart()
+          plannerController.restart()
           previousStatus = state.status
         },
       }
@@ -95,12 +110,12 @@ if (!context) {
         previousStatus !== state.status
       ) {
         const summary = deriveGameSummary(state)
-        if (summary) controller.showTerminal(summary)
+        if (summary) { controller.showTerminal(summary); plannerController.showTerminal(summary) }
       } else if (
         previousStatus === 'WON' ||
         previousStatus === 'GAME_OVER'
       ) {
-        if (state.status === 'READY') controller.restart()
+        if (state.status === 'READY') { controller.restart(); plannerController.restart() }
       }
       previousStatus = state.status
       renderGame(context, state)
@@ -109,6 +124,18 @@ if (!context) {
 
     renderGame(context, state)
     requestAnimationFrame(frame)
+  }
+}
+
+function renderTrainingState(state: TrainingState, element: HTMLElement, button: HTMLButtonElement, status: HTMLParagraphElement, summary: HTMLParagraphElement, focus: HTMLParagraphElement, recommendation: HTMLParagraphElement, evidence: HTMLUListElement): void {
+  element.hidden = state.kind === 'hidden'
+  button.disabled = state.kind === 'hidden' || state.kind === 'pending'
+  status.textContent = ''; summary.textContent = ''; focus.textContent = ''; recommendation.textContent = ''; evidence.replaceChildren()
+  if (state.kind === 'pending') status.textContent = 'CREATING TRAINING PLAN...'
+  else if (state.kind === 'failure') status.textContent = 'Training plan is temporarily unavailable. Please try again later.'
+  else if (state.kind === 'success') {
+    summary.textContent = state.plan.summary; focus.textContent = state.plan.focus; recommendation.textContent = state.plan.recommendation
+    for (const item of state.plan.evidence) { const entry = document.createElement('li'); entry.textContent = item.finding; evidence.append(entry) }
   }
 }
 

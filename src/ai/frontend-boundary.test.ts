@@ -8,6 +8,9 @@ describe('frontend production import boundary', () => {
       new URL('./api-client.ts', import.meta.url),
       new URL('./coach-controller.ts', import.meta.url),
       new URL('./game-summary.ts', import.meta.url),
+      new URL('./training-api-client.ts', import.meta.url),
+      new URL('./training-controller.ts', import.meta.url),
+      new URL('./training-contracts.ts', import.meta.url),
     ]) {
       const source = readFileSync(sourceUrl, 'utf8')
       expect(source).not.toMatch(/server\//)

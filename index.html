@@ -31,6 +31,17 @@
           <p id="ai-coach-category"></p>
         </div>
       </section>
+      <section id="training-planner" class="ai-coach" aria-labelledby="training-planner-title" hidden>
+        <h2 id="training-planner-title">Training Planner</h2>
+        <button id="create-training-plan" type="button">CREATE TRAINING PLAN</button>
+        <div class="ai-coach-output" aria-live="polite" aria-atomic="true">
+          <p id="training-planner-status" role="status"></p>
+          <p id="training-plan-summary"></p>
+          <p id="training-plan-focus"></p>
+          <p id="training-plan-recommendation"></p>
+          <ul id="training-plan-evidence"></ul>
+        </div>
+      </section>
       <p id="error" class="error" role="alert"></p>
     </main>
     <script type="module" src="/src/main.ts"></script>
