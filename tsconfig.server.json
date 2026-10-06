@@ -13,6 +13,7 @@
   "include": [
     "server/**/*.ts",
     "scripts/verify-gemini.ts",
-    "scripts/verify-gemini-fallback-capability.ts"
+    "scripts/verify-gemini-fallback-capability.ts",
+    "scripts/verify-training-live.ts"
   ]
 }

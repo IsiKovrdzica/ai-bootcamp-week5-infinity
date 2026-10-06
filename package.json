@@ -10,6 +10,7 @@
     "check:frontend-boundary": "node scripts/check-frontend-boundary.mjs",
     "verify:gemini": "node --env-file=.env --import tsx scripts/verify-gemini.ts",
     "verify:gemini:fallback-capability": "node --env-file=.env --import tsx scripts/verify-gemini-fallback-capability.ts",
+    "verify:training:live": "node --env-file=.env --import tsx scripts/verify-training-live.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json",
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build && tsc -p tsconfig.server.build.json",
     "preview": "vite preview",
