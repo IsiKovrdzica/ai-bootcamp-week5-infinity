@@ -383,6 +383,27 @@ This factual post-commit evidence append intentionally leaves `docs/EVIDENCE_W05
 - Replacement command invocation count: exactly 1 (`npm run verify:training:live`). Sanitized record: date `2026-10-06`; provider category `gemini`; elapsed time `0` ms; logical step count `2`; provider attempt count `4`; tool call count `1`; stop reason `completed`; validation result `PASS`.
 - Final A19 live result: **PASS**. T102 chronology has two commands total: the first was pre-harness SKIPPED; this replacement is the exactly one provider-backed live harness run. No second replacement, capability probe, endpoint/debug call, whole-run retry, or other provider/network call occurred. No secret, fixture payload, prompt, request, response, raw error, stack, tool data, or reasoning was recorded.
 
+### Final sanitized live demo record
+
+| Field | Recorded value |
+|---|---|
+| Date | `2026-10-06` |
+| Provider category | `gemini` |
+| Elapsed time | `0 ms` |
+| Logical step count | `2` |
+| Provider attempt count | `4` |
+| Tool call count | `1` |
+| Stop reason | `completed` |
+| Validation result | `PASS` |
+
+### Live-verification scope and limitations
+
+- The earlier pre-harness invocation is **SKIPPED** and made zero provider or network calls.
+- The table above is the sole provider-backed, bounded live run. It confirms the end-to-end application flow for that run only.
+- It does not establish ongoing Gemini availability, latency, or the quality of future Gemini responses.
+- The A1–A18 offline evaluation matrix remains the deterministic evidence for bounded workflow behavior and negative-path handling.
+- No additional live retry, provider probe, endpoint/debug call, or capability check was run.
+
 ### G9 human approval and final handoff audit
 
 - Human review approved G9 after inspecting the post-T102 repository. T100 PASS; T101 PASS after the offline P11/P13 proof correction and accepted four-cell adapter matrix; T102 chronology is preserved; A19 PASS from exactly one provider-backed replacement harness run; no subsequent live/provider/capability/debug call occurred.
