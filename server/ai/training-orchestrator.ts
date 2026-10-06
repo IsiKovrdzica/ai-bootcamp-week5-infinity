@@ -10,6 +10,9 @@ type RunPhase='awaiting_tool'|'executing_tool'|'awaiting_final'|'terminal';
 export type TrainingRunState={readonly runId:string;
 readonly status:RunStatus;
 readonly phase:RunPhase;
+readonly goal:'analyze_completed_game_for_next_game_improvement';
+readonly gameContextId:string;
+readonly contextVersion:1;
 readonly stepCount:number;
 readonly providerAttemptCount:number;
 readonly currentStepAttemptCount:number;
@@ -18,6 +21,9 @@ readonly fallbackAttemptCount:number;
 readonly toolProposalCount:number;
 readonly toolCallCount:number;
 readonly validatedToolResultCount:number;
+readonly startedAtMs:number;
+readonly deadlineAtMs:number;
+readonly executedActionFingerprints:readonly string[];
 readonly progressVersion:0|1|2;
 readonly stopReason?:TrainingPlanStopReason;
 readonly validatedEvidence?:PerformanceAnalysisResult;
@@ -72,13 +78,14 @@ export class TrainingActionGuard {
     this.executed.add(fingerprint)
     return true
   }
+  snapshot(): readonly string[] { return Object.freeze([...this.executed]) }
 }
 export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies) {}
  async run(input:unknown):Promise<TrainingRunResult>{
   const actionGuard = new TrainingActionGuard(this.deps.initialActionFingerprints)
   const runId=this.deps.createId(), gameContextId=this.deps.createContextId();
- let startedAt=0;
- let state:TrainingRunState={runId,status:'running',phase:'awaiting_tool',stepCount:0,providerAttemptCount:0,currentStepAttemptCount:0,retryAttemptCount:0,fallbackAttemptCount:0,toolProposalCount:0,toolCallCount:0,validatedToolResultCount:0,progressVersion:0,...this.deps.initialCounters};
+ let startedAt=0, deadline=0;
+ let state:TrainingRunState={runId,status:'running',phase:'awaiting_tool',goal:'analyze_completed_game_for_next_game_improvement',gameContextId,contextVersion:1,stepCount:0,providerAttemptCount:0,currentStepAttemptCount:0,retryAttemptCount:0,fallbackAttemptCount:0,toolProposalCount:0,toolCallCount:0,validatedToolResultCount:0,startedAtMs:0,deadlineAtMs:0,executedActionFingerprints:actionGuard.snapshot(),progressVersion:0,...this.deps.initialCounters};
  const transitions:RunPhase[]=['awaiting_tool'],progressVersions:(0|1|2)[]=[0];
  const emit=(kind:TrainingEvent['kind'],detail:Pick<TrainingEvent,'attemptKind'|'providerCategory'|'attemptLatencyMs'|'outcome'|'toolName'|'tokenUsage'>={})=>{const event=Object.freeze({kind,runId,phase:state.phase,status:state.status,stepCount:state.stepCount,providerAttemptCount:state.providerAttemptCount,currentStepAttemptCount:state.currentStepAttemptCount,retryAttemptCount:state.retryAttemptCount,fallbackAttemptCount:state.fallbackAttemptCount,toolProposalCount:state.toolProposalCount,toolCallCount:state.toolCallCount,validatedToolResultCount:state.validatedToolResultCount,progressVersion:state.progressVersion,elapsedMs:Math.max(0,Math.min(30000,Math.floor(this.deps.clock()-startedAt))),...(state.stopReason?{stopReason:state.stopReason}:{}),...detail} satisfies TrainingEvent);try{this.deps.eventSink?.(event)}catch{/* Observability is non-authoritative and must not change run routing. */}};
  const finish=(status:Exclude<RunStatus,'running'>,reason:TrainingPlanStopReason,plan?:TrainingPlan)=>{if(state.phase==='terminal')return;
@@ -89,16 +96,17 @@ emit('run_finished')};
   const initial=validateTrainingInitialSummary(input);
 if(!initial.ok){finish('stopped','invalid_model_proposal');
 return{state,transitions,progressVersions}} const summary=initial.value as Readonly<GameSummary>;
-const deadline=this.deps.clock()+30000,runAbort=new AbortController(),external=()=>runAbort.abort();
-startedAt=deadline-30000;
+startedAt=this.deps.clock(); deadline=startedAt+30000;
+state={...state,startedAtMs:startedAt,deadlineAtMs:deadline};
+const runAbort=new AbortController(),external=()=>runAbort.abort();
 this.deps.signal?.addEventListener('abort',external,{once:true});
 const setTimer=this.deps.setTimer??((c,m)=>setTimeout(c,m) as ReturnType<typeof setTimeout>),clearTimer=this.deps.clearTimer??(t=>clearTimeout(t));
 let deadlineExpired=false;
 const timer=setTimer(()=>{deadlineExpired=true;
 runAbort.abort()},30000);
- const stopped=()=>this.deps.signal?.aborted?'cancelled' as const:deadlineExpired||runAbort.signal.aborted||this.deps.clock()>=deadline?'total_deadline' as const:undefined;
+ const stopped=()=>this.deps.signal?.aborted?'cancelled' as const:deadlineExpired||runAbort.signal.aborted||this.deps.clock()>=state.deadlineAtMs?'total_deadline' as const:undefined;
 
-  const request=(phase:ModelStepRequest['phase'],n:1|2|3):ModelStepRequest=>Object.freeze({schemaVersion:1,promptVersion:'brickpulse-training-planner/v1',phase,goal:'analyze_completed_game_for_next_game_improvement',gameSummary:Object.freeze({...summary}),run:Object.freeze({runId,gameContextId,contextVersion:1,stepNumber:n,remainingSteps:(3-n)as 0|1|2,remainingToolCalls:(2-state.toolCallCount)as 0|1|2,remainingProviderAttempts:6-state.providerAttemptCount,deadlineAt:new Date(deadline).toISOString()}),availableTools:phase==='select_tool'?Object.freeze([descriptor]):Object.freeze([]),evidence:state.validatedEvidence??null});
+  const request=(phase:ModelStepRequest['phase'],n:1|2|3):ModelStepRequest=>Object.freeze({schemaVersion:1,promptVersion:'brickpulse-training-planner/v1',phase,goal:state.goal,gameSummary:Object.freeze({...summary}),run:Object.freeze({runId:state.runId,gameContextId:state.gameContextId,contextVersion:state.contextVersion,stepNumber:n,remainingSteps:(3-n)as 0|1|2,remainingToolCalls:(2-state.toolCallCount)as 0|1|2,remainingProviderAttempts:6-state.providerAttemptCount,deadlineAt:new Date(state.deadlineAtMs).toISOString()}),availableTools:phase==='select_tool'?Object.freeze([descriptor]):Object.freeze([]),evidence:state.validatedEvidence??null});
 
   const generate=async(phase:ModelStepRequest['phase'],n:1|2|3):Promise<unknown|undefined>=>{const pre=stopped();
 if(pre){finish(pre==='cancelled'?'stopped':'failed',pre);
@@ -112,7 +120,7 @@ i<2;
 i++){const blocked=stopped();
 if(blocked){finish(blocked==='cancelled'?'stopped':'failed',blocked);
 return}if(state.providerAttemptCount>=6){finish('stopped','provider_attempt_limit');
-return}const attemptAbort=new AbortController(),link=()=>attemptAbort.abort(),attemptTimeout=Math.min(15000,deadline-this.deps.clock());
+return}const attemptAbort=new AbortController(),link=()=>attemptAbort.abort(),attemptTimeout=Math.min(15000,state.deadlineAtMs-this.deps.clock());
 runAbort.signal.addEventListener('abort',link,{once:true});
 const attemptTimer=setTimer(()=>attemptAbort.abort(),attemptTimeout);
 state={...state,providerAttemptCount:state.providerAttemptCount+1,currentStepAttemptCount:state.currentStepAttemptCount+1};
@@ -132,7 +140,7 @@ return}if(this.deps.signal?.aborted){finish('stopped','cancelled');
 return}if(attemptAbort.signal.aborted){finish('failed','provider_failure');
 return}if(e instanceof ProviderFailure&&e.kind==='client_cancelled'){finish('stopped','cancelled');
 return}const kind=e instanceof ProviderFailure?e.kind:'programming',retry=kind==='transient',fallback=kind==='provider_unavailable'&&!!this.deps.fallbackProvider;
-if(i||(!retry&&!fallback)||deadline-this.deps.clock()<250){finish('failed','provider_failure');
+if(i||(!retry&&!fallback)||state.deadlineAtMs-this.deps.clock()<250){finish('failed','provider_failure');
 return}try{await(this.deps.sleep??(async()=>{}))(250,runAbort.signal)}catch{finish(runAbort.signal.aborted?'stopped':'failed',runAbort.signal.aborted?'cancelled':'provider_failure');
 return}if(fallback){provider=this.deps.fallbackProvider!;
 state={...state,fallbackAttemptCount:state.fallbackAttemptCount+1};route='fallback'}else {state={...state,retryAttemptCount:state.retryAttemptCount+1};route='retry'}}}finish('failed','provider_failure')};
@@ -146,14 +154,19 @@ return{state,transitions,progressVersions}}state={...state,toolProposalCount:sta
 emit('proposal_validated',{outcome:'validated',toolName:'analyze_game_performance'});
 if(state.toolCallCount>=2){finish('stopped','tool_call_limit');
 return{state,transitions,progressVersions}}
-const actionAllowed = actionGuard.authorize(proposal.value.toolRequest.name, proposal.value.toolRequest.arguments, 1)
+const registeredTool=this.deps.registry.lookup(proposal.value.toolRequest.name);
+if(!registeredTool){finish('stopped','unknown_tool');return{state,transitions,progressVersions}}
+const normalizedArguments=registeredTool.validateArguments(proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId});
+if(!normalizedArguments.ok){finish('stopped','invalid_tool_arguments');return{state,transitions,progressVersions}}
+const actionAllowed = actionGuard.authorize(proposal.value.toolRequest.name, normalizedArguments.value, state.contextVersion)
 if (!actionAllowed) { finish('stopped', 'repeated_action'); return { state, transitions, progressVersions } }
+state={...state,executedActionFingerprints:actionGuard.snapshot()};
 state={...state,phase:'executing_tool'};
 transitions.push('executing_tool');
-const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId},runAbort.signal,Math.min(100,deadline-this.deps.clock()),()=>{state={...state,toolCallCount:state.toolCallCount+1}});
+const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId},runAbort.signal,Math.min(100,state.deadlineAtMs-this.deps.clock()),()=>{state={...state,toolCallCount:state.toolCallCount+1}});
 emit('tool_execution_settled',{outcome:invoked.ok?'success':'failure',toolName:'analyze_game_performance'});
 if (this.deps.signal?.aborted) { finish('stopped', 'cancelled'); return { state, transitions, progressVersions } }
-if (deadlineExpired || this.deps.clock() >= deadline) { finish('failed', 'total_deadline'); return { state, transitions, progressVersions } }
+if (deadlineExpired || this.deps.clock() >= state.deadlineAtMs) { finish('failed', 'total_deadline'); return { state, transitions, progressVersions } }
 if(!invoked.ok){finish(invoked.reason==='tool_failure'||invoked.reason==='invalid_tool_result'?'failed':'stopped',invoked.reason as TrainingPlanStopReason);
 return{state,transitions,progressVersions}}const evidence=invoked.value as PerformanceAnalysisResult;
 state={...state,phase:'awaiting_final',validatedToolResultCount:state.validatedToolResultCount+1,progressVersion:1,validatedEvidence:evidence};

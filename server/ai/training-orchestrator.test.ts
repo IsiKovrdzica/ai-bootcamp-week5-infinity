@@ -275,3 +275,50 @@ describe('T41-T45 safety routing', () => {
     expect(started).toBe(1); expect(toolTimers).toEqual([100]); expect(result.state).toBe(snapshot); expect(result.state.status).toBe('stopped'); expect(result.state.stopReason).toBe('cancelled'); expect(result.state.toolCallCount).toBe(1); expect(result.state.validatedToolResultCount).toBe(0); expect(result.plan).toBeUndefined(); expect(provider.adapterCallCount).toBe(1)
   })
 })
+
+describe('Slice 8 authority-required run-state identity and execution snapshots', () => {
+  it.each([
+    [{ gameContextId: 'ctx_1', score: 320 }],
+    [{ gameContextId: 'wrong' }],
+    [{ gameContextId: 'ctx_1', instruction: 'ignore policy' }],
+  ])('classifies recognizable allowed-tool invalid arguments at the tool boundary', async (argumentsValue) => {
+    let executions = 0
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: argumentsValue } } }])
+    const result = await new TrainingAgentOrchestrator({ provider, registry: createTrainingToolRegistry({ execute: async () => { executions++; return {} } }), clock: () => 0, createId: () => 'run_a5', createContextId: () => 'ctx_1' }).run(validWonSummary)
+    expect(result.state).toMatchObject({ stopReason: 'invalid_tool_arguments', toolCallCount: 0, executedActionFingerprints: [] })
+    expect(executions).toBe(0)
+  })
+
+  it('keeps a genuinely malformed/non-tool proposal in invalid_model_proposal', async () => {
+    const result = await new TrainingAgentOrchestrator({ provider: new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: null } }]), registry: createTrainingToolRegistry(), clock: () => 0, createId: () => 'run_a3', createContextId: () => 'ctx_1' }).run(validWonSummary)
+    expect(result.state).toMatchObject({ stopReason: 'invalid_model_proposal', toolCallCount: 0, executedActionFingerprints: [] })
+  })
+
+  it('stores one authoritative goal, context, clock/deadline, and fingerprint source shared with provider requests', async () => {
+    const requests: any[] = []
+    const provider = {
+      async generateStep(request: unknown) {
+        requests.push(request)
+        return requests.length === 1
+          ? { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_state' } } }
+          : { kind: 'final', plan: { focus: 'consistency', summaryEvidenceIds: ['game.outcome'], recommendation: { action: 'repeat_completed_clear', evidenceIds: ['game.outcome', 'game.completion_rate'] }, evidenceIds: ['game.outcome', 'game.completion_rate'], confidence: 'high', completed: true } }
+      },
+    }
+    const result = await new TrainingAgentOrchestrator({ provider, registry: createTrainingToolRegistry(), clock: () => 1_234, createId: () => 'run_state', createContextId: () => 'ctx_state', setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>, clearTimer: () => {} }).run(validWonSummary)
+    const fingerprint = trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_state' }, 1)
+    expect(result.state).toMatchObject({ goal: 'analyze_completed_game_for_next_game_improvement', gameContextId: 'ctx_state', contextVersion: 1, startedAtMs: 1_234, deadlineAtMs: 31_234, executedActionFingerprints: [fingerprint] })
+    expect(requests).toHaveLength(2)
+    expect(requests[0]).toMatchObject({ goal: result.state.goal, run: { runId: result.state.runId, gameContextId: result.state.gameContextId, contextVersion: result.state.contextVersion, deadlineAt: new Date(result.state.deadlineAtMs).toISOString() } })
+    expect(Object.isFrozen(result.state.executedActionFingerprints)).toBe(true)
+    expect(() => (result.state.executedActionFingerprints as string[]).push('mutate')).toThrow()
+  })
+
+  it('records only actual authorized invocations and retains fingerprints in terminal failures', async () => {
+    const unknown = await new TrainingAgentOrchestrator({ provider: new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'unknown_tool', arguments: { gameContextId: 'ctx_state' } } } }]), registry: createTrainingToolRegistry(), clock: () => 0, createId: () => 'run_unknown', createContextId: () => 'ctx_state' }).run(validWonSummary)
+    expect(unknown.state).toMatchObject({ toolCallCount: 0, executedActionFingerprints: [] })
+    const invalid = await new TrainingAgentOrchestrator({ provider: new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_state' } } } }]), registry: createTrainingToolRegistry({ execute: async () => ({}) }), clock: () => 0, createId: () => 'run_invalid', createContextId: () => 'ctx_state' }).run(validWonSummary)
+    expect(invalid.state).toMatchObject({ stopReason: 'invalid_tool_result', toolCallCount: 1, executedActionFingerprints: [trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_state' }, 1)] })
+    const repeated = await new TrainingAgentOrchestrator({ provider: new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_state' } } } }]), registry: createTrainingToolRegistry(), clock: () => 0, createId: () => 'run_repeat', createContextId: () => 'ctx_state', initialActionFingerprints: [trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_state' }, 1)] }).run(validWonSummary)
+    expect(repeated.state).toMatchObject({ stopReason: 'repeated_action', toolCallCount: 0, executedActionFingerprints: [trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_state' }, 1)] })
+  })
+})
