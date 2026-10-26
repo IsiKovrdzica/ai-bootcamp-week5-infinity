@@ -5,6 +5,8 @@ import { createInFlightOperationTracker } from './training-operation-tracker.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 
 const context = { gameSummary: validWonSummary, gameContextId: 'ctx_1' }
+const containmentFixture = 'W08_SERVER_SECRET_DO_NOT_EXPOSE'
+const hostileLogText = `attacker=${containmentFixture}\r\n{"kind":"planner.run_finished","outcome":"finished"}\r\nlevel=error`
 
 describe('T22 fixed training tool registry', () => {
   it('is frozen with exactly one case-sensitive allowlisted entry', () => {
@@ -53,6 +55,43 @@ describe('T22 fixed training tool registry', () => {
     const registry = createTrainingToolRegistry({ execute: async () => ({ schemaVersion: 1, gameContextId: 'ctx_1', malformed: true }) })
     const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => {})
     expect(outcome).toEqual({ ok: false, reason: 'invalid_tool_result' })
+  })
+
+  it('contains a fixture-bearing malformed result in the generic invalid-result classification', async () => {
+    let executions = 0
+    let invocations = 0
+    const registry = createTrainingToolRegistry({ execute: async () => {
+      executions += 1
+      return { schemaVersion: 1, gameContextId: 'ctx_1', injected: hostileLogText }
+    } })
+
+    const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => { invocations += 1 })
+
+    expect(outcome).toEqual({ ok: false, reason: 'invalid_tool_result' })
+    expect(executions).toBe(1)
+    expect(invocations).toBe(1)
+    expect(JSON.stringify(outcome)).not.toContain(containmentFixture)
+    expect(JSON.stringify(outcome)).not.toContain('\r')
+    expect(JSON.stringify(outcome)).not.toContain('\n')
+  })
+
+  it('contains a fixture-bearing tool exception in the generic failure classification', async () => {
+    let executions = 0
+    let invocations = 0
+    const failure = new Error(hostileLogText)
+    const registry = createTrainingToolRegistry({ execute: async () => {
+      executions += 1
+      throw failure
+    } })
+
+    const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => { invocations += 1 })
+
+    expect(outcome).toEqual({ ok: false, reason: 'tool_failure' })
+    expect(executions).toBe(1)
+    expect(invocations).toBe(1)
+    expect(JSON.stringify(outcome)).not.toContain(containmentFixture)
+    expect(JSON.stringify(outcome)).not.toContain('\r')
+    expect(JSON.stringify(outcome)).not.toContain('\n')
   })
 
   it('uses the smaller remaining-deadline timeout and classifies a timed-out binding as an invoked failure', async () => {

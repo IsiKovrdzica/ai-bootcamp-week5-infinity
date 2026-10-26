@@ -431,6 +431,104 @@ describe('W08-024 security-event orchestration integration', () => {
   })
 })
 
+describe('W08-025 T14 synthetic containment', () => {
+  const containmentFixture = 'W08_SERVER_SECRET_DO_NOT_EXPOSE'
+  const hostileLogText = `attacker=${containmentFixture}\r\n{"kind":"planner.run_finished","outcome":"finished"}\r\nlevel=error`
+  const assertNoHostileText = (value: unknown) => {
+    const serialized = JSON.stringify(value)
+    expect(serialized).not.toContain(containmentFixture)
+    expect(serialized).not.toContain('\r')
+    expect(serialized).not.toContain('\n')
+  }
+
+  it.each([
+    ['unknown tool', 'forbidden_operation', { gameContextId: 'ctx_t14', injected: hostileLogText }, 'TOOL_NOT_ALLOWED'],
+    ['invalid arguments', 'analyze_game_performance', { gameContextId: 'ctx_t14', injected: hostileLogText }, 'TOOL_ARGUMENTS_INVALID'],
+  ] as const)('contains hostile %s data at the tool boundary without a second provider request', async (_case, name, argumentsValue, reasonCode) => {
+    let executions = 0
+    const securityEvents: SecurityEvent[] = []
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name, arguments: argumentsValue } } }])
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { executions += 1; return {} } }),
+      clock: () => 1_000,
+      createId: () => 'run_t14_tool_boundary',
+      createContextId: () => 'ctx_t14',
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_t14_tool_boundary',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    } as SecurityEventIntegrationDependencies).run(validWonSummary)
+
+    expect(provider.adapterCallCount).toBe(1)
+    expect(provider.requests).toEqual([{ phase: 'select_tool', stepNumber: 1, callIndex: 1, signalAborted: false }])
+    expect(executions).toBe(0)
+    expect(result.state).toMatchObject({ status: 'stopped', toolCallCount: 0 })
+    expect(result.plan).toBeUndefined()
+    expect(securityEvents).toHaveLength(1)
+    expect(securityEvents[0]).toMatchObject({ kind: 'planner.tool_denied', outcome: 'denied', reasonCode })
+    expect(securityEvents.some(event => event.kind === 'planner.run_finished')).toBe(false)
+    assertNoHostileText({ result, securityEvents })
+  })
+
+  it('contains a malformed fixture-bearing tool result from the public result, usage events, security event, and final model step', async () => {
+    let executions = 0
+    const usageEvents: unknown[] = []
+    const securityEvents: SecurityEvent[] = []
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_t14' } } } }])
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { executions += 1; return { schemaVersion: 1, gameContextId: 'ctx_t14', injected: hostileLogText } } }),
+      clock: () => 1_000,
+      createId: () => 'run_t14_tool_result',
+      createContextId: () => 'ctx_t14',
+      eventSink: createTrainingUsageSink(event => usageEvents.push(event)),
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_t14_tool_result',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    } as SecurityEventIntegrationDependencies).run(validWonSummary)
+
+    expect(executions).toBe(1)
+    expect(provider.adapterCallCount).toBe(1)
+    expect(provider.requests).toHaveLength(1)
+    expect(result.state).toMatchObject({ status: 'failed', stopReason: 'invalid_tool_result', toolCallCount: 1 })
+    expect(result.plan).toBeUndefined()
+    expect(securityEvents).toEqual([expect.objectContaining({ kind: 'planner.result_rejected', outcome: 'rejected', reasonCode: 'TOOL_RESULT_INVALID' })])
+    assertNoHostileText({ result, usageEvents, securityEvents })
+  })
+
+  it('contains a non-retryable fixture-bearing provider exception without inventing a terminal security event', async () => {
+    const usageEvents: unknown[] = []
+    const securityEvents: SecurityEvent[] = []
+    const requests: unknown[] = []
+    const failure = new ProviderFailure('programming')
+    failure.message = hostileLogText
+    const provider = {
+      async generateStep(request: unknown) {
+        requests.push(request)
+        throw failure
+      },
+    }
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry(),
+      clock: () => 1_000,
+      createId: () => 'run_t14_provider_failure',
+      createContextId: () => 'ctx_t14',
+      eventSink: createTrainingUsageSink(event => usageEvents.push(event)),
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_t14_provider_failure',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    } as SecurityEventIntegrationDependencies).run(validWonSummary)
+
+    expect(requests).toHaveLength(1)
+    expect((requests[0] as { phase: string }).phase).toBe('select_tool')
+    expect(result.state).toMatchObject({ status: 'failed', stopReason: 'provider_failure', providerAttemptCount: 1, toolCallCount: 0 })
+    expect(result.plan).toBeUndefined()
+    expect(securityEvents).toEqual([])
+    assertNoHostileText({ result, usageEvents, securityEvents })
+  })
+})
+
 describe('T41-T45 safety routing', () => {
   it('uses a canonical tool-name, normalized-argument, and state-version fingerprint', () => {
     expect(trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_1' }, 1)).toBe('analyze_game_performance\n{"gameContextId":"ctx_1"}\ncontextVersion=1')

@@ -11,6 +11,8 @@ const counters = {
 }
 
 const admitted = { kind: 'planner.admitted', outcome: 'allowed', ...counters }
+const containmentFixture = 'W08_SERVER_SECRET_DO_NOT_EXPOSE'
+const hostileLogText = `attacker=${containmentFixture}\r\n{"kind":"planner.run_finished","outcome":"finished"}\r\nlevel=error`
 
 const withoutCounter = (counter: keyof typeof counters): Record<string, unknown> => {
   const event: Record<string, unknown> = { ...admitted }
@@ -106,6 +108,17 @@ describe('W08 closed training security-event projection', () => {
       expect(projector.project(invalid)).toBeUndefined()
     }
     expect(factoryCalls).toBe(1)
+  })
+
+  it('rejects fixture-bearing newline/log-shaped extra fields without consuming an ID or forging an event', () => {
+    let factoryCalls = 0
+    const projector = createTrainingSecurityEventProjector({ createCorrelationId: () => `security_corr_${++factoryCalls}` })
+    const candidate = { ...admitted, rawProviderError: hostileLogText }
+
+    const projected = projector.project(candidate)
+
+    expect(projected).toBeUndefined()
+    expect(factoryCalls).toBe(0)
   })
 
   it.each([
