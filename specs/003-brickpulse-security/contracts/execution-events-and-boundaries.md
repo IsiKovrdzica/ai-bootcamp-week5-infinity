@@ -102,12 +102,46 @@ type TrainingPlannerServiceResult =
   | ExistingCompleted
   | ExistingRejected
   | ExistingUnavailable
-  | Readonly<{ kind: 'admission_denied'; reason: 'rate_limited' | 'concurrency_limited' }>
+  | Readonly<{
+      kind: 'unavailable'
+      run: Readonly<{
+        runId: 'admission_denied'
+        status: 'failed'
+        stopReason: 'provider_failure'
+        stepCount: 0
+        providerAttemptCount: 0
+        toolCallCount: 0
+        elapsedMs: 0
+      }>
+      admissionDeniedReason: 'rate_limited' | 'concurrency_limited'
+    }>
 ```
 
-`admission_denied` is internal and closed: it contains no run created from untrusted work, no raw cause, no policy configuration, and no provider/tool counters implying work occurred. It is returned before the orchestrator/provider/tool start.
+This unavailable-shaped internal result is closed: its server-only `admissionDeniedReason` contains no raw cause or policy configuration, and its zero-work run contains no provider/tool work. It is returned before the orchestrator/provider/tool start. W08-033 must project only the jointly approved public HTTP `429` response, never the internal discriminator.
 
-`server/app.ts` mapping of that result to a public 429 body, public browser response validation, exact error code/message, and whether any public metadata is exposed are shared changes requiring Isidora’s review. This contract intentionally does not choose a 429 DTO. The current 400-for-oversized-body behavior versus a future 413 remains unresolved and is not changed here.
+### Approved public admission-denial contract (W08-009)
+
+Mateja and Isidora jointly approved this contract. Both closed internal reasons, `rate_limited` and `concurrency_limited`, map to the same HTTP `429` response. Its exact public body is:
+
+```json
+{
+  "run": {
+    "runId": "admission_denied",
+    "status": "failed",
+    "stopReason": "provider_failure",
+    "stepCount": 0,
+    "providerAttemptCount": 0,
+    "toolCallCount": 0,
+    "elapsedMs": 0
+  },
+  "error": {
+    "code": "TRAINING_PLAN_ADMISSION_DENIED",
+    "message": "Training plan is temporarily unavailable. Please try again later."
+  }
+}
+```
+
+Neither internal reason nor admission-policy detail is public. The response does not send `Retry-After`. Existing `200`, `400`, `422`, and `503` behavior remains unchanged. W08-033 alone implements and verifies this approved mapping; this record is not HTTP implementation or test evidence. The current 400-for-oversized-body behavior versus a future 413 remains unresolved and is not changed here.
 
 ## Ownership and traceability
 

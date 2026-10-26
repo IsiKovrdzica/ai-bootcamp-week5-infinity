@@ -81,9 +81,9 @@ type TrackedPlannerInvocation = Readonly<{
 6. A late fulfillment/rejection after terminal state is observed only for draining; it can never change the terminal outcome, create success, or start another step/tool.
 7. If a registered abort-ignoring operation never settles, `drained` never resolves and capacity remains occupied fail-closed. Local promise settlement does not claim remote provider cancellation, processing cessation, or billing cessation.
 
-### Existing lifecycle implication
+### Implemented W08-018 lifecycle behavior
 
-`server/ai/training-tool-registry.ts` currently races raw `binding.execute(...)` against timeout/abort promises. Its losing raw operation can continue after the outer invoke result settles. Provider attempts receive a linked signal in `training-orchestrator.ts` and are awaited directly; an abort-ignoring provider may keep the outer run pending. Both forms must register the raw operation before outer control flow can make a terminal/public decision.
+Provider attempts and permitted tool executions register their raw promises with the operation tracker before their timeout/abort races can settle. Public cancellation or timeout may therefore reach its terminal result while abort-ignoring underlying work remains pending. The tracker drains only after registration closes and every registered raw operation settles; late settlement is drain-only and cannot change the terminal result. Local abort or promise settlement does not claim that remote provider processing or billing has stopped.
 
 ### Deterministic test cases
 
@@ -99,7 +99,7 @@ type TrackedPlannerInvocation = Readonly<{
 
 The existing `TrainingPlannerService.createTrainingPlan(input)` returns only a public-result promise. W08 needs an internal, tracker-aware invocation factory that creates `TrackedPlannerInvocation` synchronously with lease acquisition. It may wrap the existing public service but must not expose `drained`, raw operation state, or admission policy to browser code.
 
-`server/composition.ts` is Mateja-owned for the internal wrapper. `server/app.ts` may await `result` and map a closed admission-denied outcome, but it must never release a lease. Exact public 429 envelope and request-abort wiring remain shared decisions requiring Isidora review.
+`server/composition.ts` is Mateja-owned for the internal wrapper. `server/app.ts` may await `result` and map a closed admission-denied outcome, but it must never release a lease. W08-009 jointly approved one shared public mapping for both internal denial reasons: HTTP `429`, error code `TRAINING_PLAN_ADMISSION_DENIED`, the documented safe unavailable message, zero-counter `admission_denied` run, and no `Retry-After`; internal reason/policy detail remains server-only. W08-033 implements and verifies that mapping. Request-abort wiring remains a shared decision requiring Isidora review.
 
 ## Traceability
 
