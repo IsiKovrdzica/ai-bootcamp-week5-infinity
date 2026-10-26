@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createApp } from './app.js'
 import { createGeminiTrainingPlannerService, createProductionAdviceService, createProductionTrainingPlannerService, createTrainingPlannerService } from './composition.js'
 import { validWonSummary } from './ai/game-summary-fixtures.js'
-import { createTrainingAdmissionController, type TrainingAdmissionPolicy } from './ai/training-admission.js'
+import { createTrainingAdmissionController, type TrainingAdmissionController, type TrainingAdmissionPolicy } from './ai/training-admission.js'
 import { TrainingAgentOrchestrator } from './ai/training-orchestrator.js'
 import { createInFlightOperationTracker, type InFlightOperationTracker } from './ai/training-operation-tracker.js'
 import { analyzeGamePerformance } from './ai/training-tool.js'
@@ -119,6 +119,88 @@ describe('production training planner composition', () => {
 })
 
 describe('W08 training planner admission composition', () => {
+  it('executes the T17 capacity-one A/B/C chain with one cleanup before recovery', async () => {
+    let now = 1_000
+    const t17Policy: TrainingAdmissionPolicy = { maxActiveExecutions: 1, maxSuccessfulAdmissions: 5, windowMs: 60_000 }
+    const baseAdmission = createTrainingAdmissionController({ policy: t17Policy, now: () => now })
+    const releaseCounts: number[] = []
+    const admission: TrainingAdmissionController = {
+      tryAcquire() {
+        const outcome = baseAdmission.tryAcquire()
+        if (!outcome.ok) return outcome
+        const leaseIndex = releaseCounts.length
+        releaseCounts.push(0)
+        return {
+          ok: true,
+          lease: {
+            release() {
+              releaseCounts[leaseIndex] += 1
+              outcome.lease.release()
+            },
+          },
+        }
+      },
+    }
+    const aProviderResult = deferred<unknown>()
+    let providerCalls = 0
+    let toolExecutions = 0
+    let contextSequence = 0
+    const service = createTrainingPlannerService(new TrainingAgentOrchestrator({
+      provider: {
+        async generateStep(request) {
+          providerCalls += 1
+          if (providerCalls === 1) return aProviderResult.promise
+          return request.phase === 'select_tool'
+            ? { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: request.run.gameContextId } } }
+            : finalPlan
+        },
+      },
+      registry: createTrainingToolRegistry({
+        async execute(args, context) {
+          toolExecutions += 1
+          return analyzeGamePerformance(context.gameSummary, args.gameContextId)
+        },
+      }),
+      clock: () => now,
+      createId: () => `run_t17_${contextSequence}`,
+      createContextId: () => `ctx_t17_${++contextSequence}`,
+      setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>,
+      clearTimer: () => {},
+    }), { admissionController: admission })
+    const forbiddenProposal = { kind: 'tool_request', toolRequest: { name: 'export_game_state', arguments: { gameContextId: 'ctx_t17_1', capability: 'write' } } }
+    const requestA = service.createTrainingPlan(validWonSummary)
+
+    try {
+      await flush()
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+
+      const requestB = await service.createTrainingPlan(validWonSummary)
+      expect(requestB).toMatchObject({ kind: 'unavailable', admissionDeniedReason: 'concurrency_limited', run: { runId: 'admission_denied', providerAttemptCount: 0, toolCallCount: 0 } })
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+      expect(releaseCounts).toEqual([0])
+
+      aProviderResult.resolve(forbiddenProposal)
+      const resultA = await requestA
+      expect(resultA).toMatchObject({ kind: 'rejected', run: { status: 'stopped', stopReason: 'unknown_tool', stepCount: 1, providerAttemptCount: 1, toolCallCount: 0 } })
+      expect('plan' in resultA).toBe(false)
+      await flush()
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+      expect(releaseCounts).toEqual([1])
+
+      await expect(service.createTrainingPlan(validWonSummary)).resolves.toMatchObject({ kind: 'completed', run: { stepCount: 2, providerAttemptCount: 2, toolCallCount: 1 }, plan: expect.any(Object) })
+      await flush()
+      expect(providerCalls).toBe(3)
+      expect(toolExecutions).toBe(1)
+      expect(releaseCounts).toEqual([1, 1])
+    } finally {
+      aProviderResult.resolve(forbiddenProposal)
+      await requestA
+    }
+  })
+
   it('releases an acquired lease immediately when tracker construction fails before work can start', async () => {
     const admission = createTrainingAdmissionController({ policy, now: () => 1_000 })
     const service = createTrainingPlannerService({

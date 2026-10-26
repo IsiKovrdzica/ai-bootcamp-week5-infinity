@@ -1,5 +1,5 @@
 export type TrainingAdmissionPolicy = Readonly<{
-  maxActiveExecutions: 2
+  maxActiveExecutions: 1 | 2
   maxSuccessfulAdmissions: 5
   windowMs: 60_000
 }>
