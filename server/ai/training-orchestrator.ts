@@ -83,8 +83,8 @@ export class TrainingActionGuard {
   snapshot(): readonly string[] { return Object.freeze([...this.executed]) }
 }
 export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies) {}
- async run(input:unknown):Promise<TrainingRunResult>{
-  const operationTracker=this.deps.operationTracker??createInFlightOperationTracker()
+ async run(input:unknown, invocationOperationTracker?:InFlightOperationTracker):Promise<TrainingRunResult>{
+  const operationTracker=invocationOperationTracker??this.deps.operationTracker??createInFlightOperationTracker()
   const actionGuard = new TrainingActionGuard(this.deps.initialActionFingerprints)
   const runId=this.deps.createId(), gameContextId=this.deps.createContextId();
  let startedAt=0, deadline=0;
