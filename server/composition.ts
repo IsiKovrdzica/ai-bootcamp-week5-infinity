@@ -7,6 +7,8 @@ import { createTrainingAdmissionController, type TrainingAdmissionController, ty
 import { createInFlightOperationTracker, type InFlightOperationTracker } from './ai/training-operation-tracker.js'
 import { createTrainingToolRegistry } from './ai/training-tool-registry.js'
 import { validateTrainingInitialSummary } from './ai/training-validation.js'
+import { createTrainingSecurityEventProjector, type SecurityEvent } from './ai/training-security-events.js'
+import type { TrainingSecurityEventContext } from './ai/training-orchestrator.js'
 import type { TrainingPlan } from '../src/ai/training-contracts.js'
 import type { PublicTrainingRun } from '../src/ai/training-contracts.js'
 import type { GeminiConfig } from './ai/config.js'
@@ -41,9 +43,13 @@ const productionAdmissionController = createTrainingAdmissionController({
 export type TrainingPlannerServiceOptions = Readonly<{
   admissionController?: TrainingAdmissionController
   createOperationTracker?: () => InFlightOperationTracker
+  securityEventSink?: (event: SecurityEvent) => void
+  createSecurityCorrelationId?: () => string
 }>
 
-type TrackerAwareTrainingOrchestrator = Pick<TrainingAgentOrchestrator, 'run'>
+type TrackerAwareTrainingOrchestrator = Readonly<{
+  run(input: unknown, tracker?: InFlightOperationTracker, securityEvents?: TrainingSecurityEventContext): ReturnType<TrainingAgentOrchestrator['run']>
+}>
 
 const unavailableService: AdviceService = {
   async requestAdvice() {
@@ -84,6 +90,8 @@ export function createTrainingPlannerService(
     now: () => Date.now(),
   })
   const createOperationTracker = options.createOperationTracker ?? createInFlightOperationTracker
+  const securityEventSink = options.securityEventSink ?? (() => {})
+  const createSecurityCorrelationId = options.createSecurityCorrelationId ?? (() => globalThis.crypto.randomUUID().replaceAll('-', ''))
 
   return {
     async createTrainingPlan(input) {
@@ -94,14 +102,53 @@ export function createTrainingPlannerService(
         return run.status === 'stopped' ? { kind: 'rejected', run } : { kind: 'unavailable', run }
       }
 
+      const correlationId = createSecurityCorrelationId()
+      const projector = createTrainingSecurityEventProjector({ createCorrelationId: () => correlationId })
+      const securityEvents: TrainingSecurityEventContext = {
+        admissionSnapshot: () => admissionController.securityEventSnapshot(),
+        report(event) {
+          const projected = projector.project(event)
+          if (projected === undefined) return
+          try {
+            securityEventSink(projected)
+          } catch {
+            // Security observation is non-authoritative and must not change planner routing.
+          }
+        },
+      }
+
       const admission = admissionController.tryAcquire()
       if (!admission.ok) {
+        const snapshot = securityEvents.admissionSnapshot()
+        securityEvents.report({
+          kind: 'planner.admission_denied',
+          outcome: 'denied',
+          reasonCode: admission.reason === 'rate_limited' ? 'RATE_LIMITED' : 'CONCURRENCY_LIMITED',
+          activeExecutionCount: snapshot.activeExecutionCount,
+          admissionsInWindow: snapshot.admissionsInWindow,
+          stepCount: 0,
+          providerAttemptCount: 0,
+          toolCallCount: 0,
+          elapsedMs: 0,
+        })
         return {
           kind: 'unavailable',
           run: { ...unavailableTrainingRun(), runId: 'admission_denied' },
           admissionDeniedReason: admission.reason,
         }
       }
+
+      const admittedSnapshot = securityEvents.admissionSnapshot()
+      securityEvents.report({
+        kind: 'planner.admitted',
+        outcome: 'allowed',
+        activeExecutionCount: admittedSnapshot.activeExecutionCount,
+        admissionsInWindow: admittedSnapshot.admissionsInWindow,
+        stepCount: 0,
+        providerAttemptCount: 0,
+        toolCallCount: 0,
+        elapsedMs: 0,
+      })
 
       let operationTracker: InFlightOperationTracker
       try {
@@ -117,7 +164,7 @@ export function createTrainingPlannerService(
       ).catch(() => {})
 
       try {
-        const result = await orchestrator.run(input, operationTracker)
+        const result = await orchestrator.run(input, operationTracker, securityEvents)
         const run = projectTrainingRun(result)
         if (run.status === 'completed' && result.plan) return { kind: 'completed', run, plan: result.plan }
         return run.status === 'stopped' ? { kind: 'rejected', run } : { kind: 'unavailable', run }

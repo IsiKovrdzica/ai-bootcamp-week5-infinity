@@ -14,6 +14,10 @@ export type TrainingAdmissionOutcome =
 
 export interface TrainingAdmissionController {
   tryAcquire(): TrainingAdmissionOutcome
+  securityEventSnapshot(): Readonly<{
+    activeExecutionCount: number
+    admissionsInWindow: number
+  }>
 }
 
 type TrainingAdmissionControllerOptions = Readonly<{
@@ -31,11 +35,15 @@ export const createTrainingAdmissionController = ({
   let activeExecutionCount = 0
   let admissionTimestamps: readonly number[] = []
 
+  const pruneAdmissionWindow = (currentTime: number): void => {
+    const oldestAllowedTimestamp = currentTime - windowMs
+    admissionTimestamps = admissionTimestamps.filter(timestamp => timestamp >= oldestAllowedTimestamp)
+  }
+
   return {
     tryAcquire(): TrainingAdmissionOutcome {
       const currentTime = now()
-      const oldestAllowedTimestamp = currentTime - windowMs
-      admissionTimestamps = admissionTimestamps.filter(timestamp => timestamp >= oldestAllowedTimestamp)
+      pruneAdmissionWindow(currentTime)
 
       if (admissionTimestamps.length >= maxSuccessfulAdmissions) {
         return { ok: false, reason: 'rate_limited' }
@@ -58,6 +66,14 @@ export const createTrainingAdmissionController = ({
       }
 
       return { ok: true, lease }
+    },
+
+    securityEventSnapshot() {
+      pruneAdmissionWindow(now())
+      return Object.freeze({
+        activeExecutionCount,
+        admissionsInWindow: admissionTimestamps.length,
+      })
     },
   }
 }

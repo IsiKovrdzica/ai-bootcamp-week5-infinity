@@ -6,6 +6,7 @@ import { ProviderFailure } from './provider.js'
 import type { AgentModelProvider, ModelStepRequest, SafeTokenUsage, ToolDescriptor } from './training-provider.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 import { createInFlightOperationTracker, type InFlightOperationTracker } from './training-operation-tracker.js'
+import { createTrainingSecurityEventProjector, type SecurityEvent } from './training-security-events.js'
 type RunPhase='awaiting_tool'|'executing_tool'|'awaiting_final'|'terminal';
  type RunStatus='running'|'completed'|'stopped'|'failed'
 export type TrainingRunState={readonly runId:string;
@@ -64,6 +65,16 @@ readonly signal?:AbortSignal;
 readonly operationTracker?:InFlightOperationTracker;
 readonly initialActionFingerprints?:readonly string[];
 readonly initialCounters?:Readonly<Pick<TrainingRunState,'stepCount'|'providerAttemptCount'|'currentStepAttemptCount'|'retryAttemptCount'|'fallbackAttemptCount'|'toolProposalCount'|'toolCallCount'|'validatedToolResultCount'>>}
+export type TrainingSecurityEventReporter = (event: Omit<SecurityEvent,'correlationId'>) => void
+export type TrainingSecurityEventContext = Readonly<{
+  report: TrainingSecurityEventReporter
+  admissionSnapshot(): Readonly<{ activeExecutionCount: number; admissionsInWindow: number }>
+}>
+type SecurityEventDependencies = Readonly<{
+  securityEventSink?: (event: SecurityEvent) => void
+  correlationId?: string
+  securityEventAdmissionSnapshot?: () => Readonly<{ activeExecutionCount: number; admissionsInWindow: number }>
+}>
 export type TrainingRunResult={readonly state:TrainingRunState;
 readonly plan?:TrainingPlan;
 readonly transitions:readonly RunPhase[];
@@ -82,19 +93,29 @@ export class TrainingActionGuard {
   }
   snapshot(): readonly string[] { return Object.freeze([...this.executed]) }
 }
-export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies) {}
- async run(input:unknown, invocationOperationTracker?:InFlightOperationTracker):Promise<TrainingRunResult>{
+export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies & SecurityEventDependencies) {}
+ async run(input:unknown, invocationOperationTracker?:InFlightOperationTracker, invocationSecurityEvents?:TrainingSecurityEventContext):Promise<TrainingRunResult>{
   const operationTracker=invocationOperationTracker??this.deps.operationTracker??createInFlightOperationTracker()
   const actionGuard = new TrainingActionGuard(this.deps.initialActionFingerprints)
   const runId=this.deps.createId(), gameContextId=this.deps.createContextId();
  let startedAt=0, deadline=0;
  let state:TrainingRunState={runId,status:'running',phase:'awaiting_tool',goal:'analyze_completed_game_for_next_game_improvement',gameContextId,contextVersion:1,stepCount:0,providerAttemptCount:0,currentStepAttemptCount:0,retryAttemptCount:0,fallbackAttemptCount:0,toolProposalCount:0,toolCallCount:0,validatedToolResultCount:0,startedAtMs:0,deadlineAtMs:0,executedActionFingerprints:actionGuard.snapshot(),progressVersion:0,...this.deps.initialCounters};
  const transitions:RunPhase[]=['awaiting_tool'],progressVersions:(0|1|2)[]=[0];
+ const directSecurityProjector=this.deps.securityEventSink!==undefined&&this.deps.correlationId!==undefined&&this.deps.securityEventAdmissionSnapshot!==undefined
+  ?createTrainingSecurityEventProjector({createCorrelationId:()=>this.deps.correlationId!}):undefined;
+ const securityEvents:TrainingSecurityEventContext|undefined=invocationSecurityEvents??(directSecurityProjector===undefined||this.deps.securityEventAdmissionSnapshot===undefined?undefined:{
+  admissionSnapshot:this.deps.securityEventAdmissionSnapshot,
+  report:event=>{const projected=directSecurityProjector.project(event);if(projected===undefined)return;try{this.deps.securityEventSink?.(projected)}catch{/* Security observation cannot alter run routing. */}},
+ });
  const emit=(kind:TrainingEvent['kind'],detail:Pick<TrainingEvent,'attemptKind'|'providerCategory'|'attemptLatencyMs'|'outcome'|'toolName'|'tokenUsage'>={})=>{const event=Object.freeze({kind,runId,phase:state.phase,status:state.status,stepCount:state.stepCount,providerAttemptCount:state.providerAttemptCount,currentStepAttemptCount:state.currentStepAttemptCount,retryAttemptCount:state.retryAttemptCount,fallbackAttemptCount:state.fallbackAttemptCount,toolProposalCount:state.toolProposalCount,toolCallCount:state.toolCallCount,validatedToolResultCount:state.validatedToolResultCount,progressVersion:state.progressVersion,elapsedMs:Math.max(0,Math.min(30000,Math.floor(this.deps.clock()-startedAt))),...(state.stopReason?{stopReason:state.stopReason}:{}),...detail} satisfies TrainingEvent);try{this.deps.eventSink?.(event)}catch{/* Observability is non-authoritative and must not change run routing. */}};
+ const reportSecurity=(kind:SecurityEvent['kind'],outcome:SecurityEvent['outcome'],detail:Pick<SecurityEvent,'reasonCode'|'terminalStatus'>={})=>{if(securityEvents===undefined)return;const admission=securityEvents.admissionSnapshot();const elapsedMs=Math.max(0,Math.min(30000,Math.floor(this.deps.clock()-startedAt)));securityEvents.report({kind,outcome,activeExecutionCount:admission.activeExecutionCount,admissionsInWindow:admission.admissionsInWindow,stepCount:state.stepCount,providerAttemptCount:state.providerAttemptCount,toolCallCount:state.toolCallCount,elapsedMs,...detail})};
  const finish=(status:Exclude<RunStatus,'running'>,reason:TrainingPlanStopReason,plan?:TrainingPlan)=>{if(state.phase==='terminal')return;
 state=frozen({...state,status,phase:'terminal',stopReason:reason,...(plan?{finalResult:plan}:{})});
 transitions.push('terminal');
-emit('run_finished')};
+emit('run_finished');
+if(status==='completed')reportSecurity('planner.run_finished','finished',{terminalStatus:'completed'});
+else if(reason==='cancelled')reportSecurity('planner.run_finished','finished',{reasonCode:'RUN_CANCELLED',terminalStatus:status});
+else if(reason==='total_deadline')reportSecurity('planner.run_finished','finished',{reasonCode:'RUN_DEADLINE_EXCEEDED',terminalStatus:'failed'})};
 
   const initial=validateTrainingInitialSummary(input);
 if(!initial.ok){finish('stopped','invalid_model_proposal');operationTracker.closeRegistration();
@@ -160,15 +181,15 @@ state={...state,fallbackAttemptCount:state.fallbackAttemptCount+1};route='fallba
 const one=await generate('select_tool',1);
 if(state.phase==='terminal')return{state,transitions,progressVersions};
 const proposal=validateTrainingModelProposal(one,'select_tool');
-if(!proposal.ok||proposal.value.kind!=='tool_request'){finish('stopped','invalid_model_proposal');
+if(!proposal.ok||proposal.value.kind!=='tool_request'){reportSecurity('planner.result_rejected','rejected',{reasonCode:'MODEL_OUTPUT_INVALID'});finish('stopped','invalid_model_proposal');
 return{state,transitions,progressVersions}}state={...state,toolProposalCount:state.toolProposalCount+1};
 emit('proposal_validated',{outcome:'validated',toolName:'analyze_game_performance'});
 if(state.toolCallCount>=2){finish('stopped','tool_call_limit');
 return{state,transitions,progressVersions}}
 const registeredTool=this.deps.registry.lookup(proposal.value.toolRequest.name);
-if(!registeredTool){finish('stopped','unknown_tool');return{state,transitions,progressVersions}}
+if(!registeredTool){reportSecurity('planner.tool_denied','denied',{reasonCode:'TOOL_NOT_ALLOWED'});finish('stopped','unknown_tool');return{state,transitions,progressVersions}}
 const normalizedArguments=registeredTool.validateArguments(proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId});
-if(!normalizedArguments.ok){finish('stopped','invalid_tool_arguments');return{state,transitions,progressVersions}}
+if(!normalizedArguments.ok){reportSecurity('planner.tool_denied','denied',{reasonCode:'TOOL_ARGUMENTS_INVALID'});finish('stopped','invalid_tool_arguments');return{state,transitions,progressVersions}}
 const actionAllowed = actionGuard.authorize(proposal.value.toolRequest.name, normalizedArguments.value, state.contextVersion)
 if (!actionAllowed) { finish('stopped', 'repeated_action'); return { state, transitions, progressVersions } }
 state={...state,executedActionFingerprints:actionGuard.snapshot()};
@@ -178,7 +199,7 @@ const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,pr
 emit('tool_execution_settled',{outcome:invoked.ok?'success':'failure',toolName:'analyze_game_performance'});
 if (this.deps.signal?.aborted) { finish('stopped', 'cancelled'); return { state, transitions, progressVersions } }
 if (deadlineExpired || this.deps.clock() >= state.deadlineAtMs) { finish('failed', 'total_deadline'); return { state, transitions, progressVersions } }
-if(!invoked.ok){finish(invoked.reason==='tool_failure'||invoked.reason==='invalid_tool_result'?'failed':'stopped',invoked.reason as TrainingPlanStopReason);
+if(!invoked.ok){if(invoked.reason==='invalid_tool_result')reportSecurity('planner.result_rejected','rejected',{reasonCode:'TOOL_RESULT_INVALID'});finish(invoked.reason==='tool_failure'||invoked.reason==='invalid_tool_result'?'failed':'stopped',invoked.reason as TrainingPlanStopReason);
 return{state,transitions,progressVersions}}const evidence=invoked.value as PerformanceAnalysisResult;
 state={...state,phase:'awaiting_final',validatedToolResultCount:state.validatedToolResultCount+1,progressVersion:1,validatedEvidence:evidence};
 transitions.push('awaiting_final');
@@ -187,7 +208,7 @@ emit('tool_result_validated',{outcome:'validated',toolName:'analyze_game_perform
 const two=await generate('produce_final',2);
 if(state.phase==='terminal')return{state,transitions,progressVersions};
 const final=validateTrainingFinalProposal(two,evidence),rendered=final.ok?renderPublicTrainingPlan(final.value,evidence):final;
-if(!rendered.ok){finish('stopped','invalid_final_output');
+if(!rendered.ok){reportSecurity('planner.result_rejected','rejected',{reasonCode:'MODEL_OUTPUT_INVALID'});finish('stopped','invalid_final_output');
 return{state,transitions,progressVersions}}state={...state,progressVersion:2};
 progressVersions.push(2);
 emit('final_validated',{outcome:'validated'});
