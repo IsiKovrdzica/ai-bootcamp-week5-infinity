@@ -2,10 +2,37 @@ import { describe, expect, it } from 'vitest'
 import { validWonSummary } from './game-summary-fixtures.js'
 import { ScriptedAgentModelProvider } from './training-fake-provider.js'
 import { TrainingActionGuard, TrainingAgentOrchestrator, trainingToolFingerprint } from './training-orchestrator.js'
+import { createInFlightOperationTracker } from './training-operation-tracker.js'
 import { analyzeGamePerformance } from './training-tool.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 import { ProviderFailure } from './provider.js'
 import { createTrainingUsageSink } from './training-usage-log.js'
+
+type Deferred<T> = Readonly<{
+  promise: Promise<T>
+  resolve(value: T): void
+}>
+
+const createDeferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
+const flushTrackerMicrotasks = async (): Promise<void> => {
+  for (let turn = 0; turn < 6; turn += 1) await Promise.resolve()
+}
+
+const expectTrackerPending = async (promise: Promise<void>): Promise<void> => {
+  let settled = false
+  void promise.then(() => {
+    settled = true
+  })
+  await flushTrackerMicrotasks()
+  expect(settled).toBe(false)
+}
 
 describe('T32 minimal successful training run', () => {
   it('attaches safe token counts to their exact primary and fixed-fallback attempts without emitting raw provider data', async () => {
@@ -53,6 +80,61 @@ describe('T32 minimal successful training run', () => {
     expect(events.map(event => (event as { kind: string }).kind)).toEqual(['run_started', 'step_started', 'provider_attempt_settled', 'proposal_validated', 'tool_execution_settled', 'tool_result_validated', 'step_started', 'provider_attempt_settled', 'final_validated', 'run_finished'])
     expect(events.every(event => !Object.hasOwn(event as object, 'gameSummary') && !Object.hasOwn(event as object, 'response'))).toBe(true)
     expect(result.plan).toEqual({ summary: 'The completed game supports a consistency training focus.', focus: 'consistency', recommendation: 'For the next game, aim to repeat the completed clear.', evidence: [{ id: 'game.outcome', finding: 'Outcome: WON.' }, { id: 'game.completion_rate', finding: 'Completion rate: 100.00%.' }], confidence: 'high', completed: true })
+  })
+})
+
+describe('W08 provider raw-operation tracking', () => {
+  it('keeps an abort-ignoring provider operation tracked after cancellation until its raw Promise settles', async () => {
+    const tracker = createInFlightOperationTracker()
+    const providerResult = createDeferred<unknown>()
+    const requestAbort = new AbortController()
+    let providerCalls = 0
+    let providerSawAbort = false
+    let toolExecutions = 0
+    const provider = {
+      generateStep: async (_request: unknown, options: { signal: AbortSignal }) => {
+        providerCalls += 1
+        options.signal.addEventListener('abort', () => {
+          providerSawAbort = true
+        }, { once: true })
+        return providerResult.promise
+      },
+    }
+    const run = new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { toolExecutions += 1; return {} } }),
+      clock: () => 0,
+      createId: () => 'run_tracker',
+      createContextId: () => 'ctx_tracker',
+      signal: requestAbort.signal,
+      setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>,
+      clearTimer: () => {},
+      // W08-018 review: track(kind, Promise) cannot prove registration happens
+      // before Promise creation; registration-open checks must precede starting work.
+      // Per-attempt terminal authority remains orchestrator-owned until a separately
+      // approved identity design is needed beyond kind-only tracker dispositions.
+      operationTracker: tracker,
+    }).run(validWonSummary)
+    await flushTrackerMicrotasks()
+    expect(providerCalls).toBe(1)
+    requestAbort.abort()
+    try {
+      await flushTrackerMicrotasks()
+      expect(providerSawAbort).toBe(true)
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+      const publicResult = await run
+      expect(publicResult.state.status).toBe('stopped')
+      expect(publicResult.state.stopReason).toBe('cancelled')
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+      await expectTrackerPending(tracker.drained)
+      providerResult.resolve({ kind: 'refusal' })
+      await expect(tracker.drained).resolves.toBeUndefined()
+    } finally {
+      providerResult.resolve({ kind: 'refusal' })
+      await run
+    }
   })
 })
 

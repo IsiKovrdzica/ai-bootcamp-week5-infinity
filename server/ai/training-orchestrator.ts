@@ -5,6 +5,7 @@ import { renderPublicTrainingPlan, validateTrainingFinalProposal, validateTraini
 import { ProviderFailure } from './provider.js'
 import type { AgentModelProvider, ModelStepRequest, SafeTokenUsage, ToolDescriptor } from './training-provider.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
+import { createInFlightOperationTracker, type InFlightOperationTracker } from './training-operation-tracker.js'
 type RunPhase='awaiting_tool'|'executing_tool'|'awaiting_final'|'terminal';
  type RunStatus='running'|'completed'|'stopped'|'failed'
 export type TrainingRunState={readonly runId:string;
@@ -60,6 +61,7 @@ readonly setTimer?:(c:()=>void,m:number)=>ReturnType<typeof setTimeout>;
 readonly clearTimer?:(t:ReturnType<typeof setTimeout>)=>void;
 readonly sleep?:(m:number,s:AbortSignal)=>Promise<void>;
 readonly signal?:AbortSignal;
+readonly operationTracker?:InFlightOperationTracker;
 readonly initialActionFingerprints?:readonly string[];
 readonly initialCounters?:Readonly<Pick<TrainingRunState,'stepCount'|'providerAttemptCount'|'currentStepAttemptCount'|'retryAttemptCount'|'fallbackAttemptCount'|'toolProposalCount'|'toolCallCount'|'validatedToolResultCount'>>}
 export type TrainingRunResult={readonly state:TrainingRunState;
@@ -82,6 +84,7 @@ export class TrainingActionGuard {
 }
 export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies) {}
  async run(input:unknown):Promise<TrainingRunResult>{
+  const operationTracker=this.deps.operationTracker??createInFlightOperationTracker()
   const actionGuard = new TrainingActionGuard(this.deps.initialActionFingerprints)
   const runId=this.deps.createId(), gameContextId=this.deps.createContextId();
  let startedAt=0, deadline=0;
@@ -94,7 +97,7 @@ transitions.push('terminal');
 emit('run_finished')};
 
   const initial=validateTrainingInitialSummary(input);
-if(!initial.ok){finish('stopped','invalid_model_proposal');
+if(!initial.ok){finish('stopped','invalid_model_proposal');operationTracker.closeRegistration();
 return{state,transitions,progressVersions}} const summary=initial.value as Readonly<GameSummary>;
 startedAt=this.deps.clock(); deadline=startedAt+30000;
 state={...state,startedAtMs:startedAt,deadlineAtMs:deadline};
@@ -122,18 +125,26 @@ if(blocked){finish(blocked==='cancelled'?'stopped':'failed',blocked);
 return}if(state.providerAttemptCount>=6){finish('stopped','provider_attempt_limit');
 return}const attemptAbort=new AbortController(),link=()=>attemptAbort.abort(),attemptTimeout=Math.min(15000,state.deadlineAtMs-this.deps.clock());
 runAbort.signal.addEventListener('abort',link,{once:true});
-const attemptTimer=setTimer(()=>attemptAbort.abort(),attemptTimeout);
 state={...state,providerAttemptCount:state.providerAttemptCount+1,currentStepAttemptCount:state.currentStepAttemptCount+1};
 const attemptStartedAt=this.deps.clock(); let tokenUsage:SafeTokenUsage|undefined;
 const acceptTokenUsage=(usage:SafeTokenUsage)=>{const input=typeof usage.input==='number'&&Number.isFinite(usage.input)&&usage.input>=0?usage.input:undefined,output=typeof usage.output==='number'&&Number.isFinite(usage.output)&&usage.output>=0?usage.output:undefined;if(input!==undefined||output!==undefined)tokenUsage=Object.freeze({... (input!==undefined?{input}:{}),...(output!==undefined?{output}:{})})};
-try{const v=await provider.generateStep(req,{signal:attemptAbort.signal,onTokenUsage:acceptTokenUsage});
-clearTimer(attemptTimer);
+let attemptTimer:ReturnType<typeof setTimeout>|undefined;
+let rejectAttemptAbort:(reason:Error)=>void=()=>{};
+const aborted=new Promise<never>((_,reject)=>{rejectAttemptAbort=reject});
+const rejectOnAbort=()=>rejectAttemptAbort(new Error('provider aborted'));
+attemptAbort.signal.addEventListener('abort',rejectOnAbort,{once:true});
+try{const rawOperation=operationTracker.start('provider_attempt',()=>provider.generateStep(req,{signal:attemptAbort.signal,onTokenUsage:acceptTokenUsage}));
+attemptTimer=setTimer(()=>attemptAbort.abort(),attemptTimeout);
+const v=await Promise.race([rawOperation,aborted]);
+if(attemptTimer!==undefined)clearTimer(attemptTimer);
 runAbort.signal.removeEventListener('abort',link);
+attemptAbort.signal.removeEventListener('abort',rejectOnAbort);
 emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'success',...(tokenUsage?{tokenUsage}:{})});
 if(stopped()){const r=stopped()!;
 finish(r==='cancelled'?'stopped':'failed',r);
-return}return v}catch(e){clearTimer(attemptTimer);
+return}return v}catch(e){if(attemptTimer!==undefined)clearTimer(attemptTimer);
 runAbort.signal.removeEventListener('abort',link);
+attemptAbort.signal.removeEventListener('abort',rejectOnAbort);
 emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'failure',...(tokenUsage?{tokenUsage}:{})});
 if(deadlineExpired){finish('failed','total_deadline');
 return}if(this.deps.signal?.aborted){finish('stopped','cancelled');
@@ -163,7 +174,7 @@ if (!actionAllowed) { finish('stopped', 'repeated_action'); return { state, tran
 state={...state,executedActionFingerprints:actionGuard.snapshot()};
 state={...state,phase:'executing_tool'};
 transitions.push('executing_tool');
-const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId},runAbort.signal,Math.min(100,state.deadlineAtMs-this.deps.clock()),()=>{state={...state,toolCallCount:state.toolCallCount+1}});
+const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId},runAbort.signal,Math.min(100,state.deadlineAtMs-this.deps.clock()),()=>{state={...state,toolCallCount:state.toolCallCount+1}},operationTracker);
 emit('tool_execution_settled',{outcome:invoked.ok?'success':'failure',toolName:'analyze_game_performance'});
 if (this.deps.signal?.aborted) { finish('stopped', 'cancelled'); return { state, transitions, progressVersions } }
 if (deadlineExpired || this.deps.clock() >= state.deadlineAtMs) { finish('failed', 'total_deadline'); return { state, transitions, progressVersions } }
@@ -181,5 +192,5 @@ return{state,transitions,progressVersions}}state={...state,progressVersion:2};
 progressVersions.push(2);
 emit('final_validated',{outcome:'validated'});
 finish('completed','completed',rendered.value);
-return{state,plan:rendered.value,transitions,progressVersions}}finally{clearTimer(timer);
+return{state,plan:rendered.value,transitions,progressVersions}}finally{operationTracker.closeRegistration();clearTimer(timer);
 this.deps.signal?.removeEventListener('abort',external)}}}

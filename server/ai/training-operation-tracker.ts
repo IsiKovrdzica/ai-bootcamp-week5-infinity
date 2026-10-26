@@ -6,6 +6,7 @@ export type PublicOperationDisposition = 'completed' | 'timeout' | 'cancelled'
 
 export interface InFlightOperationTracker {
   track<T>(kind: OperationKind, operation: Promise<T>): Promise<T>
+  start<T>(kind: OperationKind, startOperation: () => Promise<T>): Promise<T>
   recordPublicDisposition(kind: OperationKind, disposition: PublicOperationDisposition): void
   closeRegistration(): void
   readonly drained: Promise<void>
@@ -35,18 +36,39 @@ export const createInFlightOperationTracker = (): InFlightOperationTracker => {
     resolveWhenDrained()
   }
 
+  const register = <T>(kind: OperationKind, operation: Promise<T>): Promise<T> => {
+    if (!registrationOpen) {
+      throw new Error(`Cannot register ${kind}: operation tracking is closed`)
+    }
+    outstandingOperationCount += 1
+    void operation.then(
+      () => settle('fulfilled'),
+      () => settle('rejected'),
+    )
+    return operation
+  }
+
   return Object.freeze({
     track<T>(kind: OperationKind, operation: Promise<T>): Promise<T> {
+      return register(kind, operation)
+    },
+
+    start<T>(kind: OperationKind, startOperation: () => Promise<T>): Promise<T> {
       if (!registrationOpen) {
         throw new Error(`Cannot register ${kind}: operation tracking is closed`)
       }
-
       outstandingOperationCount += 1
-      void operation.then(
-        () => settle('fulfilled'),
-        () => settle('rejected'),
-      )
-      return operation
+      try {
+        const operation = startOperation()
+        void operation.then(
+          () => settle('fulfilled'),
+          () => settle('rejected'),
+        )
+        return operation
+      } catch (error) {
+        settle('rejected')
+        throw error
+      }
     },
 
     recordPublicDisposition(kind: OperationKind, disposition: PublicOperationDisposition): void {
