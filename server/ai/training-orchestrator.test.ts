@@ -207,6 +207,7 @@ describe('T41-T45 safety routing', () => {
     let executions = 0; const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } } }])
     const result = await new TrainingAgentOrchestrator({ provider, registry: createTrainingToolRegistry({ execute: async () => { executions++; return {} } }), clock: () => 0, createId: () => 'run_1', createContextId: () => 'ctx_1', initialActionFingerprints: [trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_1' }, 1)] }).run(validWonSummary)
     expect(result.state.status).toBe('stopped'); expect(result.state.stopReason).toBe('repeated_action'); expect(result.state.stepCount).toBe(1); expect(result.state.providerAttemptCount).toBe(1); expect(result.state.toolProposalCount).toBe(1); expect(result.state.toolCallCount).toBe(0); expect(result.state.validatedToolResultCount).toBe(0); expect(result.state.retryAttemptCount).toBe(0); expect(result.state.fallbackAttemptCount).toBe(0); expect(executions).toBe(0); expect(provider.adapterCallCount).toBe(1)
+    expect(result.plan).toBeUndefined()
   })
   const make = (entries: ConstructorParameters<typeof ScriptedAgentModelProvider>[0], executions: { value: number }) => new TrainingAgentOrchestrator({
     provider: new ScriptedAgentModelProvider(entries), registry: createTrainingToolRegistry({ execute: async (args, context) => { executions.value++; return analyzeGamePerformance(context.gameSummary, args.gameContextId) } }), clock: () => 0, createId: () => 'run_1', createContextId: () => 'ctx_1', setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>, clearTimer: () => {}, sleep: async () => {},
@@ -290,6 +291,18 @@ describe('T41-T45 safety routing', () => {
     const registry = createTrainingToolRegistry({ execute: async () => { calls++; return { schemaVersion: 1, gameContextId: 'ctx_1', malformed: true } } })
     const result = await new TrainingAgentOrchestrator({ provider, registry, clock: () => 0, createId: () => 'run_1', createContextId: () => 'ctx_1' }).run(validWonSummary)
     expect(result.state.status).toBe('failed'); expect(result.state.stopReason).toBe('invalid_tool_result'); expect(result.state.toolCallCount).toBe(1); expect(result.state.validatedToolResultCount).toBe(0); expect(provider.adapterCallCount).toBe(1); expect(calls).toBe(1)
+  })
+  it('rejects an unserializable invoked tool result before a final provider step', async () => {
+    let executions = 0
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } } }])
+    const registry = createTrainingToolRegistry({ execute: async () => { executions++; return cyclic } })
+    const result = await new TrainingAgentOrchestrator({ provider, registry, clock: () => 0, createId: () => 'run_cyclic_tool', createContextId: () => 'ctx_1' }).run(validWonSummary)
+    expect(result.state).toMatchObject({ status: 'failed', stopReason: 'invalid_tool_result', stepCount: 1, providerAttemptCount: 1, toolCallCount: 1, validatedToolResultCount: 0 })
+    expect(provider.adapterCallCount).toBe(1)
+    expect(executions).toBe(1)
+    expect(result.plan).toBeUndefined()
   })
   it('stops invalid final output without transport retry or public plan', async () => {
     const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_1' } } } }, { type: 'resolve', value: { kind: 'final', plan: { focus: 'survival' } } }])

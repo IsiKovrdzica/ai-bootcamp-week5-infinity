@@ -64,6 +64,19 @@ describe('T22 fixed training tool registry', () => {
     expect(executions).toBe(1)
     expect(timers).toEqual([1])
   })
+
+  it('caps an invoked permitted tool at 100ms when more run time remains', async () => {
+    let executions = 0
+    const timers: number[] = []
+    const registry = createTrainingToolRegistry(
+      { execute: async () => { executions++; return new Promise<unknown>(() => {}) } },
+      { setTimer: (callback, milliseconds) => { timers.push(milliseconds); callback(); return 1 as unknown as ReturnType<typeof setTimeout> }, clearTimer: () => {} },
+    )
+    const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 1_000, () => {})
+    expect(outcome).toEqual({ ok: false, reason: 'tool_failure' })
+    expect(executions).toBe(1)
+    expect(timers).toEqual([100])
+  })
 })
 
 type Deferred<T> = Readonly<{

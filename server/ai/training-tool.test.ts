@@ -72,4 +72,12 @@ describe('T22 result validation', () => {
     expect(validatePerformanceAnalysisResult(reordered, context).ok).toBe(true)
     expect(validatePerformanceAnalysisResult({ ...valid, completionRate: -0 }, context).ok).toBe(false)
   })
+
+  it('rejects an unserializable result without allowing the size check to throw', () => {
+    const context = { gameSummary: validWonSummary, gameContextId: 'ctx_1' }
+    const cyclic: Record<string, unknown> = { ...analyzeGamePerformance(validWonSummary, 'ctx_1') }
+    cyclic.self = cyclic
+    expect(() => validatePerformanceAnalysisResult(cyclic, context)).not.toThrow()
+    expect(validatePerformanceAnalysisResult(cyclic, context).ok).toBe(false)
+  })
 })
