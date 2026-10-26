@@ -7,8 +7,8 @@ applyTo: "**/*"
 
 ## Review order
 
-1. Confirm Week03 gameplay changes match docs/GAME_SPEC.md, Week04 AI Coach changes match specs/001-brickpulse-ai-coach/spec.md, and Week05 Training Planner changes match specs/002-brickpulse-training-agent/spec.md.
-2. Reject features outside the approved Week04 Coach or bounded Week05 Planner scope.
+1. Confirm Week03 gameplay changes match docs/GAME_SPEC.md, Week04 AI Coach changes match specs/001-brickpulse-ai-coach/spec.md, Week05 Training Planner changes match specs/002-brickpulse-training-agent/spec.md, and Week08 changes match the narrow hardening scope in specs/003-brickpulse-security/spec.md and tasks.md.
+2. Reject features outside the approved Week04 Coach, bounded Week05 Planner, or approved Week08 hardening of that existing planner.
 3. Check that `GameConfig` is validated at runtime before playable state exists.
 4. Check all eight gameplay rules, including collision-side response.
 5. Check that pure rules remain separate from browser input and Canvas rendering.
@@ -21,6 +21,7 @@ applyTo: "**/*"
 12. Check browser/backend separation, backend-only credentials, sanitized diagnostics, exact 200/400/503 responses, stale-response handling, and Week03 regression evidence.
 13. For Week05, check the single bounded planner endpoint, server-owned loop/budgets/deadlines, one allowlisted deterministic read-only tool, fake-first tests, strict proposal/tool/final validation, sanitized public/evidence data, unchanged Week04 advice behavior, and the later live gate.
 14. Check each Week05 commit for exactly one `Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>` trailer and a matching factual evidence hash.
+15. For Week08, check only approved hardening: server-owned admission limits; exact existing tool-policy enforcement; tracked underlying provider/tool work and fail-closed lease lifetime; bounded deadlines/retries/budgets; closed safe events/errors; synthetic-only containment; and regression of normal W05 behavior. Verify no real credential, secret environment value, live provider, new endpoint/provider/tool, browser-owned policy, write capability, or gameplay change was introduced. Confirm public HTTP 429 DTO/envelope, 400-versus-413, request-abort, and shared acceptance changes have both owners' approval.
 
 ## Findings to reject
 

@@ -27,7 +27,7 @@ specification
 ## Before editing
 
 1. Read `AGENTS.md` and route through `.github/00-index.instructions.md`.
-2. For Week03 work, read only context authorized for the current stage by docs/CONTEXT_MANIFEST.md. For the approved Week04 AI Coach, use its SpecKit artifacts and tasks.md dependency order.
+2. For Week03 work, read only context authorized for the current stage by docs/CONTEXT_MANIFEST.md. For the approved Week04 AI Coach, Week05 Training Planner, or Week08 planner hardening, use that feature's SpecKit artifacts and tasks.md dependency order.
 3. Confirm the allowed paths and current scope.
 4. State assumptions or contradictions before changing files.
 
@@ -41,7 +41,10 @@ specification
 - Log meaningful AI assistance without private reasoning.
 - For the approved Week04 feature, finish each task phase with its smallest relevant verification and focused diff inspection. Respect RED/GREEN ordering, dependency approval gates, and the separate offline/live verification gates in tasks.md.
 - For the approved Week05 Training Planner, follow `specs/002-brickpulse-training-agent/tasks.md` exactly. Maintain factual `docs/EVIDENCE_W05.md` and `docs/AI_USAGE_LOG_W05.md` continuously; record only commands actually run, observed results, review facts, pair decisions, and post-approval commit metadata.
+- For approved Week08 planner hardening, follow specs/003-brickpulse-security/tasks.md exactly. No application or test work begins until the W08 instruction-gate tasks are reviewed and committed. Execute one independently reviewable task per Codex interaction: write the focused RED expectation before the corresponding GREEN change where applicable; use deterministic fake providers and synthetic data only; STOP and report after each task; obtain explicit human review before any commit; use a separate commit-only interaction; and do not automatically start a successor, push, or merge. Create or update root EVIDENCE_W08.md only when its approved task authorizes it, and record only actual sanitized results.
+- Mateja owns the approved backend/agent workstream. Isidora owns HTTP-input, browser/XSS, CSP/security-header, game-integrity, CORS/CSRF, and dependency work. Both owners must approve changes to a public HTTP 429 envelope/DTO, the 400-versus-413 policy, request-abort behavior crossing the HTTP boundary, and shared acceptance artifacts; do not state Isidora approval without confirmation.
 - Never read or alter `.env` or another secret-bearing environment file. Routine Week05 work is offline; a provider call requires the explicit later live gate in the approved tasks.
+- Never read, inspect, print, copy, or use real credentials or actual environment-secret values. Routine Week08 work is offline and never invokes Gemini or another paid/external provider. Synthetic sentinels may be used only in isolated server-side tests and must not appear in browser assets, public responses, model context, operational logs, or submitted evidence.
 - Every Week05 commit requires exactly one `Co-authored-by: Mateja Miletic <miletic.matejamiletic.mateja@gmail.com>` trailer. Verify the trailer after committing and record the commit hash in Week05 evidence. Do not commit or begin the next slice before its human gate.
 
 ## Evidence and external actions
@@ -49,4 +52,4 @@ specification
 - Record actual commands, outputs, limitations, and skipped checks.
 - Never fabricate results or generated evidence.
 - Do not commit, push, deploy, publish, or contact external services unless separately requested.
-- Stop on contradictory requirements, missing material decisions, out-of-scope paths, or Week04 behavior outside the approved AI Coach specification. Stop before a dependency install without its required approval and before any live provider call without the required offline gate and explicit authorization.
+- Stop on contradictory requirements, missing material decisions, out-of-scope paths, or behavior outside the approved Week04 Coach, Week05 Planner, or narrow Week08 hardening scope. Stop before a dependency install without its required approval and before any live provider call without the required offline gate and explicit authorization.

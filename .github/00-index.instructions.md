@@ -1,5 +1,5 @@
 ---
-description: "Routing guide for BrickPulse Week03 gameplay, Week04 AI Coach, and approved Week05 Training Planner."
+description: "Routing guide for BrickPulse Week03 gameplay, Week04 AI Coach, Week05 Training Planner, and approved Week08 planner security hardening."
 applyTo: "**/*"
 ---
 
@@ -16,6 +16,8 @@ Use this index to select the smallest relevant context. Do not load every docume
 - specs/001-brickpulse-ai-coach/tasks.md — approved Week04 execution order and dependency gates.
 - specs/002-brickpulse-training-agent/spec.md — requirements authority for the approved additive Week05 bounded Training Planner.
 - specs/002-brickpulse-training-agent/{plan.md,research.md,data-model.md,quickstart.md,contracts/**,tasks.md} — Week05 architecture/contracts and gated execution order.
+- specs/003-brickpulse-security/spec.md — requirements authority for approved Week08 hardening of the existing Week05 planner only.
+- specs/003-brickpulse-security/{plan.md,research.md,quickstart.md,contracts/**,tasks.md} — Week08 architecture, contracts, credential-free workflow, and gated execution order.
 - `docs/BUILD_PROMPT_V1.md` — task prompt for the future baseline implementation.
 - `docs/CONTEXT_MANIFEST.md` — sources actually allowed for each stage.
 - `docs/EVALS.md` — evaluator-owned formal expectations; excluded from baseline implementation context.
@@ -38,12 +40,15 @@ Use this index to select the smallest relevant context. Do not load every docume
 | Approved Week05 Training Planner architecture, tool, provider, endpoint, or frontend boundary | 01-architecture.instructions.md | specs/002-brickpulse-training-agent/spec.md, plan.md, contracts, tasks.md |
 | Approved Week05 fake-first TDD, validation, budget, or regression work | 02-testing.instructions.md | specs/002-brickpulse-training-agent/spec.md, tasks.md |
 | Approved Week05 workflow, evidence, gate, or commit work | 03-workflow.instructions.md | 05-code-review.instructions.md, specs/002-brickpulse-training-agent/tasks.md |
+| Approved Week08 planner admission, lifecycle, tool-policy, safe-event, or containment work | 01-architecture.instructions.md | specs/003-brickpulse-security/{spec.md,plan.md,research.md,contracts/**,tasks.md} |
+| Approved Week08 fake-only RED/GREEN verification | 02-testing.instructions.md | specs/003-brickpulse-security/{spec.md,plan.md,quickstart.md,tasks.md} |
+| Approved Week08 workflow, ownership, evidence, gate, or commit work | 03-workflow.instructions.md | 05-code-review.instructions.md, specs/003-brickpulse-security/tasks.md |
 | Documentation-only change | `03-workflow.instructions.md` | Add another module only if its subject changes |
 | Formal Week 3 evaluation after the baseline is frozen | `docs/EVALS.md` | `05-code-review.instructions.md`, `docs/EVIDENCE_003.md` |
 
 ## Baseline context rule
 
-For the historical Week03 baseline, follow docs/CONTEXT_MANIFEST.md. Formal evaluation and evidence documents are not baseline implementation input. The approved Week04 task follows its SpecKit artifacts without rewriting historical Week03 documents. The approved Week05 task follows its `002` artifacts in task order, preserves Week03/Week04 behavior, and keeps routine work fake-first and offline.
+For the historical Week03 baseline, follow docs/CONTEXT_MANIFEST.md. Formal evaluation and evidence documents are not baseline implementation input. The approved Week04 task follows its SpecKit artifacts without rewriting historical Week03 documents. The approved Week05 task follows its `002` artifacts in task order, preserves Week03/Week04 behavior, and keeps routine work fake-first and offline. The approved Week08 task follows its `003` artifacts in task order, hardens only the existing Week05 planner, and preserves all earlier safeguards.
 
 ## Maintenance
 
