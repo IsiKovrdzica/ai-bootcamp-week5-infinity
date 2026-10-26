@@ -223,6 +223,29 @@ describe('T41-T45 safety routing', () => {
     const executions = { value: 0 }; const result = await make([{ type: 'resolve', value: proposal }], executions).run(validWonSummary)
     expect(result.state.stopReason).toBe(reason); expect(result.state.toolCallCount).toBe(0); expect(executions.value).toBe(0)
   })
+  it.each([
+    ['unknown', 'delete_database', { gameContextId: 'ctx_1' }, 'unknown_tool'],
+    ['inherited constructor', 'constructor', { gameContextId: 'ctx_1' }, 'unknown_tool'],
+    ['inherited toString', 'toString', { gameContextId: 'ctx_1' }, 'unknown_tool'],
+    ['wrong case', 'Analyze_Game_Performance', { gameContextId: 'ctx_1' }, 'unknown_tool'],
+    ['wrong argument type', 'analyze_game_performance', { gameContextId: 1 }, 'invalid_tool_arguments'],
+    ['model-supplied policy field', 'analyze_game_performance', { gameContextId: 'ctx_1', policy: 'unbounded' }, 'invalid_tool_arguments'],
+  ] as const)('keeps one provider proposal and zero actual tool executions for W08 T07/T08 %s', async (_case, name, argumentsValue, reason) => {
+    let executions = 0
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name, arguments: argumentsValue } } }])
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { executions += 1; return {} } }),
+      clock: () => 0,
+      createId: () => 'run_w08_boundary',
+      createContextId: () => 'ctx_1',
+    }).run(validWonSummary)
+    expect(result.state.stopReason).toBe(reason)
+    expect(result.state.providerAttemptCount).toBe(1)
+    expect(provider.adapterCallCount).toBe(1)
+    expect(result.state.toolCallCount).toBe(0)
+    expect(executions).toBe(0)
+  })
   it('retries a transient provider failure exactly once without a new step', async () => {
     const provider = new ScriptedAgentModelProvider([{ type: 'reject', failure: new ProviderFailure('transient') }, { type: 'resolve', value: { kind: 'refusal' } }])
     const result = await new TrainingAgentOrchestrator({ provider, registry: createTrainingToolRegistry(), clock: () => 0, createId: () => 'run_1', createContextId: () => 'ctx_1', sleep: async () => {}, setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>, clearTimer: () => {} }).run(validWonSummary)

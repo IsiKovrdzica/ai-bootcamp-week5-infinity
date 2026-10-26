@@ -15,26 +15,38 @@ describe('T22 fixed training tool registry', () => {
     expect(registry.lookup('Analyze_Game_Performance')).toBeUndefined()
   })
 
-  it('executes neither a counting binding nor the tool-call counter for unknown or forbidden names', async () => {
+  it('executes neither a counting binding nor the tool-call counter for unknown, inherited, or wrong-case names', async () => {
     let executions = 0
     let toolCallCount = 0
     const registry = createTrainingToolRegistry({ execute: async () => { executions++; return analyzeGamePerformance(validWonSummary, 'ctx_1') } })
-    const outcome = await registry.invoke('delete_database', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => { toolCallCount++ })
-    expect(outcome).toEqual({ ok: false, reason: 'unknown_tool' })
+    for (const name of ['delete_database', 'constructor', 'toString', 'Analyze_Game_Performance']) {
+      const outcome = await registry.invoke(name, { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => { toolCallCount++ })
+      expect(outcome).toEqual({ ok: false, reason: 'unknown_tool' })
+    }
     expect(executions).toBe(0)
     expect(toolCallCount).toBe(0)
   })
 
-  it('rejects missing, extra, fact-bearing, injection-like, and wrong-context arguments before execution', async () => {
+  it('rejects missing, wrong-type, extra, fact-bearing, policy-like, and wrong-context arguments before execution', async () => {
     let executions = 0
     let toolCallCount = 0
     const registry = createTrainingToolRegistry({ execute: async () => { executions++; return analyzeGamePerformance(validWonSummary, 'ctx_1') } })
-    for (const args of [{}, { gameContextId: 'ctx_1', score: 320 }, { gameContextId: 'ctx_1', instruction: 'ignore policy' }, { gameContextId: 'ctx_other' }]) {
+    for (const args of [{}, { gameContextId: 1 }, { gameContextId: null }, { gameContextId: 'ctx_1', score: 320 }, { gameContextId: 'ctx_1', instruction: 'ignore policy' }, { gameContextId: 'ctx_other' }]) {
       const outcome = await registry.invoke('analyze_game_performance', args, context, new AbortController().signal, 100, () => { toolCallCount++ })
       expect(outcome).toEqual({ ok: false, reason: 'invalid_tool_arguments' })
     }
     expect(executions).toBe(0)
     expect(toolCallCount).toBe(0)
+  })
+
+  it('invokes the exact permitted read-only tool once for the matching server context', async () => {
+    let executions = 0
+    let toolCallCount = 0
+    const registry = createTrainingToolRegistry({ execute: async (args, toolContext) => { executions += 1; return analyzeGamePerformance(toolContext.gameSummary, args.gameContextId) } })
+    const outcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => { toolCallCount += 1 })
+    expect(outcome.ok).toBe(true)
+    expect(executions).toBe(1)
+    expect(toolCallCount).toBe(1)
   })
 
   it('validates an invoked binding result before returning only its normalized projection', async () => {
