@@ -7,6 +7,7 @@ import { analyzeGamePerformance } from './training-tool.js'
 import { createTrainingToolRegistry } from './training-tool-registry.js'
 import { ProviderFailure } from './provider.js'
 import { createTrainingUsageSink } from './training-usage-log.js'
+import type { SecurityEvent } from './training-security-events.js'
 
 type Deferred<T> = Readonly<{
   promise: Promise<T>
@@ -277,6 +278,156 @@ describe('T48 sanitized event boundaries', () => {
     expect(events.at(-1)).toMatchObject({ status: 'failed', stopReason: 'provider_failure', providerAttemptCount: 1 })
     const serialized = JSON.stringify(events)
     for (const forbidden of ['PROVIDER_ERROR_SENTINEL', 'error', 'stack', 'gameSummary', 'prompt', 'response']) expect(serialized).not.toContain(forbidden)
+  })
+})
+
+type SecurityEventIntegrationDependencies = ConstructorParameters<typeof TrainingAgentOrchestrator>[0] & Readonly<{
+  securityEventSink(event: SecurityEvent): void
+  correlationId: string
+  securityEventAdmissionSnapshot(): Readonly<{ activeExecutionCount: number; admissionsInWindow: number }>
+}>
+
+const finalProposal = {
+  kind: 'final',
+  plan: {
+    focus: 'consistency',
+    summaryEvidenceIds: ['game.outcome'],
+    recommendation: { action: 'repeat_completed_clear', evidenceIds: ['game.outcome', 'game.completion_rate'] },
+    evidenceIds: ['game.outcome', 'game.completion_rate'],
+    confidence: 'high',
+    completed: true,
+  },
+} as const
+
+describe('W08-024 security-event orchestration integration', () => {
+  it.each([
+    ['unknown tool', { kind: 'tool_request', toolRequest: { name: 'forbidden_operation', arguments: { gameContextId: 'ctx_security', injected: 'untrusted' } } }, 'TOOL_NOT_ALLOWED'],
+    ['invalid tool arguments', { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_security', injected: 'untrusted' } } }, 'TOOL_ARGUMENTS_INVALID'],
+  ] as const)('projects a closed tool-denial event for %s without unsupported terminal output', async (_label, proposal, reasonCode) => {
+    const securityEvents: SecurityEvent[] = []
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: proposal }])
+    const dependencies: SecurityEventIntegrationDependencies = {
+      provider,
+      registry: createTrainingToolRegistry(),
+      clock: () => 1_000,
+      createId: () => 'run_security',
+      createContextId: () => 'ctx_security',
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_security',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    }
+
+    const result = await new TrainingAgentOrchestrator(dependencies).run(validWonSummary)
+
+    expect(result.state).toMatchObject({ status: 'stopped', toolCallCount: 0 })
+    expect(securityEvents).toContainEqual({ correlationId: 'corr_security', kind: 'planner.tool_denied', outcome: 'denied', reasonCode, activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 1, providerAttemptCount: 1, toolCallCount: 0, elapsedMs: 0 })
+    expect(securityEvents.some(event => event.kind === 'planner.run_finished')).toBe(false)
+    expect(JSON.stringify(securityEvents)).not.toContain('forbidden_operation')
+    expect(JSON.stringify(securityEvents)).not.toContain('injected')
+  })
+
+  it.each([
+    ['invalid model output', { kind: 'refusal', raw: 'untrusted-model-data' }, 'MODEL_OUTPUT_INVALID'],
+    ['invalid tool result', { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_security' } } }, 'TOOL_RESULT_INVALID'],
+  ] as const)('projects a closed result-rejection event for %s', async (label, proposal, reasonCode) => {
+    const securityEvents: SecurityEvent[] = []
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: proposal }])
+    const dependencies: SecurityEventIntegrationDependencies = {
+      provider,
+      registry: createTrainingToolRegistry(label === 'invalid tool result' ? { execute: async () => ({ malformed: 'untrusted-tool-data' }) } : {}),
+      clock: () => 1_000,
+      createId: () => 'run_security',
+      createContextId: () => 'ctx_security',
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_security',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    }
+
+    const result = await new TrainingAgentOrchestrator(dependencies).run(validWonSummary)
+
+    expect(result.state.status).toBe(reasonCode === 'TOOL_RESULT_INVALID' ? 'failed' : 'stopped')
+    expect(securityEvents).toContainEqual({ correlationId: 'corr_security', kind: 'planner.result_rejected', outcome: 'rejected', reasonCode, activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 1, providerAttemptCount: 1, toolCallCount: reasonCode === 'TOOL_RESULT_INVALID' ? 1 : 0, elapsedMs: 0 })
+    expect(securityEvents.some(event => event.kind === 'planner.run_finished')).toBe(false)
+    expect(JSON.stringify(securityEvents)).not.toContain('untrusted-')
+  })
+
+  it('emits one completed terminal event and isolates a throwing security observer from W05 usage events', async () => {
+    const usageEvents: unknown[] = []
+    let securityObserverCalls = 0
+    const provider = new ScriptedAgentModelProvider([
+      { type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_security' } } } },
+      { type: 'resolve', value: finalProposal },
+    ])
+    const dependencies: SecurityEventIntegrationDependencies = {
+      provider,
+      registry: createTrainingToolRegistry(),
+      clock: () => 1_000,
+      createId: () => 'run_security',
+      createContextId: () => 'ctx_security',
+      eventSink: event => usageEvents.push(event),
+      securityEventSink: () => { securityObserverCalls += 1; throw new Error('security observer failed') },
+      correlationId: 'corr_security',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    }
+
+    const result = await new TrainingAgentOrchestrator(dependencies).run(validWonSummary)
+
+    expect(result.state).toMatchObject({ status: 'completed', stepCount: 2, providerAttemptCount: 2, toolCallCount: 1 })
+    expect(securityObserverCalls).toBe(1)
+    expect(usageEvents).toHaveLength(10)
+  })
+
+  it('emits one cancellation terminal event before late raw-provider settlement without duplicate output', async () => {
+    const securityEvents: SecurityEvent[] = []
+    const tracker = createInFlightOperationTracker()
+    const requestAbort = new AbortController()
+    const rawProvider = createDeferred<unknown>()
+    const run = new TrainingAgentOrchestrator({
+      provider: { async generateStep() { return rawProvider.promise } },
+      registry: createTrainingToolRegistry(),
+      clock: () => 1_000,
+      createId: () => 'run_cancelled',
+      createContextId: () => 'ctx_security',
+      signal: requestAbort.signal,
+      operationTracker: tracker,
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_cancelled',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    } as SecurityEventIntegrationDependencies).run(validWonSummary)
+
+    await flushTrackerMicrotasks()
+    requestAbort.abort()
+    await expect(run).resolves.toMatchObject({ state: { status: 'stopped', stopReason: 'cancelled' } })
+    expect(securityEvents).toEqual([
+      { correlationId: 'corr_cancelled', kind: 'planner.run_finished', outcome: 'finished', reasonCode: 'RUN_CANCELLED', terminalStatus: 'stopped', activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 1, providerAttemptCount: 1, toolCallCount: 0, elapsedMs: 0 },
+    ])
+
+    rawProvider.resolve({ kind: 'refusal' })
+    await expect(tracker.drained).resolves.toBeUndefined()
+    expect(securityEvents).toHaveLength(1)
+  })
+
+  it('emits one deadline terminal event without beginning provider work', async () => {
+    const securityEvents: SecurityEvent[] = []
+    let providerCalls = 0
+    const result = await new TrainingAgentOrchestrator({
+      provider: { async generateStep() { providerCalls += 1; return { kind: 'refusal' } } },
+      registry: createTrainingToolRegistry(),
+      clock: () => 1_000,
+      createId: () => 'run_deadline',
+      createContextId: () => 'ctx_security',
+      setTimer: callback => { callback(); return 1 as unknown as ReturnType<typeof setTimeout> },
+      clearTimer: () => {},
+      securityEventSink: event => securityEvents.push(event),
+      correlationId: 'corr_deadline',
+      securityEventAdmissionSnapshot: () => ({ activeExecutionCount: 1, admissionsInWindow: 1 }),
+    } as SecurityEventIntegrationDependencies).run(validWonSummary)
+
+    expect(result.state).toMatchObject({ status: 'failed', stopReason: 'total_deadline', stepCount: 0, providerAttemptCount: 0 })
+    expect(providerCalls).toBe(0)
+    expect(securityEvents).toEqual([
+      { correlationId: 'corr_deadline', kind: 'planner.run_finished', outcome: 'finished', reasonCode: 'RUN_DEADLINE_EXCEEDED', terminalStatus: 'failed', activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 },
+    ])
   })
 })
 

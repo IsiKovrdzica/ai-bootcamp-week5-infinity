@@ -146,4 +146,16 @@ describe('W08 training admission controller', () => {
     expect('lease' in denied).toBe(false)
     // Planner-start callback and provider/tool zero-call assertions require W08-008 composition integration.
   })
+
+  it('exposes an internal bounded snapshot after admission decisions for security-event projection', () => {
+    const controller = createController(() => 1_000) as TrainingAdmissionController & {
+      securityEventSnapshot(): Readonly<{ activeExecutionCount: number; admissionsInWindow: number }>
+    }
+
+    expect(controller.securityEventSnapshot()).toEqual({ activeExecutionCount: 0, admissionsInWindow: 0 })
+    const firstLease = expectAccepted(controller.tryAcquire())
+    expect(controller.securityEventSnapshot()).toEqual({ activeExecutionCount: 1, admissionsInWindow: 1 })
+    firstLease.release()
+    expect(controller.securityEventSnapshot()).toEqual({ activeExecutionCount: 0, admissionsInWindow: 1 })
+  })
 })

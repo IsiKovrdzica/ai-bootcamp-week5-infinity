@@ -7,6 +7,7 @@ import { TrainingAgentOrchestrator } from './ai/training-orchestrator.js'
 import { createInFlightOperationTracker, type InFlightOperationTracker } from './ai/training-operation-tracker.js'
 import { analyzeGamePerformance } from './ai/training-tool.js'
 import { createTrainingToolRegistry } from './ai/training-tool-registry.js'
+import type { SecurityEvent } from './ai/training-security-events.js'
 
 type Deferred<T> = Readonly<{ promise: Promise<T>; resolve(value: T): void }>
 
@@ -39,6 +40,15 @@ const finalPlan = {
     completed: true,
   },
 } as const
+
+type SecurityEventServiceOptions = Parameters<typeof createTrainingPlannerService>[1] & Readonly<{
+  securityEventSink(event: SecurityEvent): void
+  createSecurityCorrelationId(): string
+}>
+
+type SecuritySnapshotAdmissionController = TrainingAdmissionController & Readonly<{
+  securityEventSnapshot(): Readonly<{ activeExecutionCount: number; admissionsInWindow: number }>
+}>
 
 describe('production advice composition', () => {
   it('maps missing backend Gemini configuration through the existing safe 503 response', async () => {
@@ -122,9 +132,9 @@ describe('W08 training planner admission composition', () => {
   it('executes the T17 capacity-one A/B/C chain with one cleanup before recovery', async () => {
     let now = 1_000
     const t17Policy: TrainingAdmissionPolicy = { maxActiveExecutions: 1, maxSuccessfulAdmissions: 5, windowMs: 60_000 }
-    const baseAdmission = createTrainingAdmissionController({ policy: t17Policy, now: () => now })
+    const baseAdmission = createTrainingAdmissionController({ policy: t17Policy, now: () => now }) as SecuritySnapshotAdmissionController
     const releaseCounts: number[] = []
-    const admission: TrainingAdmissionController = {
+    const admission: SecuritySnapshotAdmissionController = {
       tryAcquire() {
         const outcome = baseAdmission.tryAcquire()
         if (!outcome.ok) return outcome
@@ -140,11 +150,15 @@ describe('W08 training planner admission composition', () => {
           },
         }
       },
+      securityEventSnapshot() {
+        return baseAdmission.securityEventSnapshot()
+      },
     }
     const aProviderResult = deferred<unknown>()
     let providerCalls = 0
     let toolExecutions = 0
     let contextSequence = 0
+    const securityEvents: SecurityEvent[] = []
     const service = createTrainingPlannerService(new TrainingAgentOrchestrator({
       provider: {
         async generateStep(request) {
@@ -166,7 +180,14 @@ describe('W08 training planner admission composition', () => {
       createContextId: () => `ctx_t17_${++contextSequence}`,
       setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>,
       clearTimer: () => {},
-    }), { admissionController: admission })
+    }), {
+      admissionController: admission,
+      securityEventSink: event => securityEvents.push(event),
+      createSecurityCorrelationId: (() => {
+        let sequence = 0
+        return () => `corr_t17_${++sequence}`
+      })(),
+    } as SecurityEventServiceOptions)
     const forbiddenProposal = { kind: 'tool_request', toolRequest: { name: 'export_game_state', arguments: { gameContextId: 'ctx_t17_1', capability: 'write' } } }
     const requestA = service.createTrainingPlan(validWonSummary)
 
@@ -195,6 +216,13 @@ describe('W08 training planner admission composition', () => {
       expect(providerCalls).toBe(3)
       expect(toolExecutions).toBe(1)
       expect(releaseCounts).toEqual([1, 1])
+      expect(securityEvents).toEqual([
+        { correlationId: 'corr_t17_1', kind: 'planner.admitted', outcome: 'allowed', activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 },
+        { correlationId: 'corr_t17_2', kind: 'planner.admission_denied', outcome: 'denied', reasonCode: 'CONCURRENCY_LIMITED', activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 },
+        { correlationId: 'corr_t17_1', kind: 'planner.tool_denied', outcome: 'denied', reasonCode: 'TOOL_NOT_ALLOWED', activeExecutionCount: 1, admissionsInWindow: 1, stepCount: 1, providerAttemptCount: 1, toolCallCount: 0, elapsedMs: 0 },
+        { correlationId: 'corr_t17_3', kind: 'planner.admitted', outcome: 'allowed', activeExecutionCount: 1, admissionsInWindow: 2, stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 },
+        { correlationId: 'corr_t17_3', kind: 'planner.run_finished', outcome: 'finished', activeExecutionCount: 1, admissionsInWindow: 2, stepCount: 2, providerAttemptCount: 2, toolCallCount: 1, elapsedMs: 0, terminalStatus: 'completed' },
+      ])
     } finally {
       aProviderResult.resolve(forbiddenProposal)
       await requestA
