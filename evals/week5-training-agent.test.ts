@@ -5,6 +5,7 @@ import { ScriptedAgentModelProvider } from '../server/ai/training-fake-provider.
 import { TrainingAgentOrchestrator, trainingToolFingerprint } from '../server/ai/training-orchestrator.js'
 import { analyzeGamePerformance } from '../server/ai/training-tool.js'
 import { createTrainingToolRegistry } from '../server/ai/training-tool-registry.js'
+import { createTrainingUsageSink } from '../server/ai/training-usage-log.js'
 import { TrainingController } from '../src/ai/training-controller.js'
 import { CoachController } from '../src/ai/coach-controller.js'
 
@@ -27,8 +28,11 @@ function run(entries: ConstructorParameters<typeof ScriptedAgentModelProvider>[0
 
 describe('Week 05 offline acceptance matrix (A1–A18)', () => {
   it('A1: completes the two-step, one-tool evidence-backed success path', async () => {
-    const test = run([{ type: 'resolve', value: tool() }, { type: 'resolve', value: final() }]); const result = await test.result
+    const usageEvents: unknown[] = []
+    const test = run([{ type: 'resolve', value: tool() }, { type: 'resolve', value: final() }], { eventSink: createTrainingUsageSink(event => usageEvents.push(event)) }); const result = await test.result
     expect(result.state).toMatchObject({ status: 'completed', stopReason: 'completed', stepCount: 2, providerAttemptCount: 2, toolProposalCount: 1, toolCallCount: 1, validatedToolResultCount: 1 })
+    expect(usageEvents.map(event => (event as { kind: string }).kind)).toEqual(['run_started', 'step_started', 'provider_attempt_settled', 'proposal_validated', 'tool_execution_settled', 'tool_result_validated', 'step_started', 'provider_attempt_settled', 'final_validated', 'run_finished'])
+    expect(usageEvents.at(-1)).toMatchObject({ status: 'completed', stepCount: 2, providerAttemptCount: 2, retryAttemptCount: 0, fallbackAttemptCount: 0, toolProposalCount: 1, toolCallCount: 1, validatedToolResultCount: 1, stopReason: 'completed' })
     expect(test.executions.value).toBe(1); expect(result.state.validatedEvidence).toBeDefined(); expect(result.plan?.completed).toBe(true)
     const evidence = new Map(result.state.validatedEvidence?.evidence.map(record => [record.id, record.value]))
     expect(result.plan?.evidence.map(item => item.id)).toEqual(['game.outcome', 'game.completion_rate'])
