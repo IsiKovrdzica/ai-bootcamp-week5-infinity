@@ -60,6 +60,13 @@ describe('T12 proposal and argument validation', () => {
   ])('rejects exact-key final proposal with invalid nested data %#', (plan) => {
     expect(validateTrainingModelProposal({ kind: 'final', plan }, 'produce_final').ok).toBe(false)
   })
+
+  it('rejects a cyclic unknown provider proposal without allowing serialization to escape', () => {
+    const cyclic: Record<string, unknown> = { kind: 'refusal' }
+    cyclic.self = cyclic
+    expect(() => validateTrainingModelProposal(cyclic, 'select_tool')).not.toThrow()
+    expect(validateTrainingModelProposal(cyclic, 'select_tool').ok).toBe(false)
+  })
 })
 
 describe('T13 final semantic validation', () => {

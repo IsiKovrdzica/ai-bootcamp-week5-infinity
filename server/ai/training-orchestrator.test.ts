@@ -427,3 +427,43 @@ describe('Slice 8 authority-required run-state identity and execution snapshots'
     expect(repeated.state).toMatchObject({ stopReason: 'repeated_action', toolCallCount: 0, executedActionFingerprints: [trainingToolFingerprint('analyze_game_performance', { gameContextId: 'ctx_state' }, 1)] })
   })
 })
+
+describe('W08 T06/T09 provider proposal boundaries', () => {
+  it.each([
+    ['unexpected proposal property', { kind: 'refusal', extra: true }],
+    ['premature final', { kind: 'final', plan: { focus: 'consistency', summaryEvidenceIds: ['game.outcome'], recommendation: { action: 'repeat_completed_clear', evidenceIds: ['game.outcome', 'game.completion_rate'] }, evidenceIds: ['game.outcome', 'game.completion_rate'], confidence: 'high', completed: true } }],
+    ['oversized proposal', { kind: 'refusal', padding: 'x'.repeat(8_192) }],
+  ])('stops a %s after one provider proposal without tool execution or a public plan', async (_case, proposal) => {
+    let executions = 0
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: proposal }])
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { executions += 1; return {} } }),
+      clock: () => 0,
+      createId: () => 'run_w08_t06',
+      createContextId: () => 'ctx_1',
+    }).run(validWonSummary)
+    expect(result.state).toMatchObject({ status: 'stopped', stopReason: 'invalid_model_proposal', stepCount: 1, providerAttemptCount: 1, toolCallCount: 0 })
+    expect(provider.adapterCallCount).toBe(1)
+    expect(executions).toBe(0)
+    expect(result.plan).toBeUndefined()
+  })
+
+  it('rejects a malicious fake-provider capability proposal without copying it into the public result', async () => {
+    let executions = 0
+    const forbiddenCapability = 'export_game_state'
+    const provider = new ScriptedAgentModelProvider([{ type: 'resolve', value: { kind: 'tool_request', toolRequest: { name: forbiddenCapability, arguments: { gameContextId: 'ctx_1', capability: 'write' } } } }])
+    const result = await new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { executions += 1; return {} } }),
+      clock: () => 0,
+      createId: () => 'run_w08_t09',
+      createContextId: () => 'ctx_1',
+    }).run(validWonSummary)
+    expect(result.state).toMatchObject({ status: 'stopped', stopReason: 'unknown_tool', stepCount: 1, providerAttemptCount: 1, toolCallCount: 0 })
+    expect(provider.adapterCallCount).toBe(1)
+    expect(executions).toBe(0)
+    expect(result.plan).toBeUndefined()
+    expect(JSON.stringify({ state: result.state, plan: result.plan })).not.toContain(forbiddenCapability)
+  })
+})
