@@ -4,7 +4,14 @@ import { TRAINING_AGENT_LIMITS, type AgentPhase, type NormalizedModelProposal, t
 import { TRAINING_CONFIDENCES, TRAINING_EVIDENCE_IDS, TRAINING_FOCUSES, TRAINING_PLAN_STOP_REASONS, type EvidenceId, type PublicTrainingRun, type TrainingConfidence, type TrainingFocus, type TrainingPlan } from '../../src/ai/training-contracts.js'
 
 const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype && Object.keys(v).length === keys.length && keys.every(k => Object.prototype.hasOwnProperty.call(v, k))
-const bytesOk = (v: unknown, max: number) => Buffer.byteLength(JSON.stringify(v), 'utf8') <= max
+const bytesOk = (v: unknown, max: number) => {
+  try {
+    const serialized = JSON.stringify(v)
+    return typeof serialized === 'string' && Buffer.byteLength(serialized, 'utf8') <= max
+  } catch {
+    return false
+  }
+}
 const isDomainValue = <T extends string>(value: unknown, domain: readonly T[]): value is T => typeof value === 'string' && domain.includes(value as T)
 const ids = (v: unknown, min: number, max: number): v is EvidenceId[] => Array.isArray(v) && v.length >= min && v.length <= max && v.every(x => isDomainValue(x, TRAINING_EVIDENCE_IDS)) && new Set(v).size === v.length
 const RECOMMENDATION_ACTIONS = ['reduce_lives_lost', 'improve_clear_rate', 'repeat_completed_clear'] as const
