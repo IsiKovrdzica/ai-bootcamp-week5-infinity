@@ -85,4 +85,39 @@ describe('W08 closed training security-event projection', () => {
     expect(projector.project(input)).toMatchObject({ correlationId: 'security_corr_1' })
     expect(projector.project(input)).toMatchObject({ correlationId: 'security_corr_2' })
   })
+
+  it('constructs a fresh event and rejects caller IDs, unknown fields, and malformed inputs before generating an ID', () => {
+    let factoryCalls = 0
+    const projector = createTrainingSecurityEventProjector({ createCorrelationId: () => `security_corr_${++factoryCalls}` })
+    const input = { kind: 'planner.admitted', outcome: 'allowed', ...counters }
+    const projected = projector.project(input)
+
+    expect(projected).toEqual({ correlationId: 'security_corr_1', ...input })
+    expect(projected).not.toBe(input)
+    expect(factoryCalls).toBe(1)
+    for (const invalid of [
+      { ...input, correlationId: 'caller_controlled' },
+      { ...input, rawProviderError: 'untrusted' },
+      null,
+      [],
+      { kind: 'planner.admitted', outcome: 'allowed' },
+    ]) {
+      expect(() => projector.project(invalid)).not.toThrow()
+      expect(projector.project(invalid)).toBeUndefined()
+    }
+    expect(factoryCalls).toBe(1)
+  })
+
+  it.each([
+    ['prototype inspection', new Proxy({ ...admitted }, { getPrototypeOf: () => { throw new Error('prototype trap') } })],
+    ['own-key enumeration', new Proxy({ ...admitted }, { ownKeys: () => { throw new Error('ownKeys trap') } })],
+    ['property access', new Proxy({ ...admitted }, { get: () => { throw new Error('get trap') } })],
+  ])('fails closed when %s throws during untrusted input inspection', (_operation, input) => {
+    let factoryCalls = 0
+    const projector = createTrainingSecurityEventProjector({ createCorrelationId: () => `security_corr_${++factoryCalls}` })
+
+    expect(() => projector.project(input)).not.toThrow()
+    expect(projector.project(input)).toBeUndefined()
+    expect(factoryCalls).toBe(0)
+  })
 })
