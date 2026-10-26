@@ -11,14 +11,17 @@ import { createTrainingUsageSink } from './training-usage-log.js'
 type Deferred<T> = Readonly<{
   promise: Promise<T>
   resolve(value: T): void
+  reject(reason: unknown): void
 }>
 
 const createDeferred = <T>(): Deferred<T> => {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(resolvePromise => {
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 const flushTrackerMicrotasks = async (): Promise<void> => {
@@ -133,6 +136,92 @@ describe('W08 provider raw-operation tracking', () => {
       await expect(tracker.drained).resolves.toBeUndefined()
     } finally {
       providerResult.resolve({ kind: 'refusal' })
+      await run
+    }
+  })
+
+  it('keeps a deadline-terminal provider run immutable until an abort-ignoring raw rejection drains', async () => {
+    const tracker = createInFlightOperationTracker()
+    const providerResult = createDeferred<unknown>()
+    const timers: (() => void)[] = []
+    let providerCalls = 0
+    let toolExecutions = 0
+    const run = new TrainingAgentOrchestrator({
+      provider: { async generateStep() { providerCalls += 1; return providerResult.promise } },
+      registry: createTrainingToolRegistry({ execute: async () => { toolExecutions += 1; return {} } }),
+      clock: () => 0,
+      createId: () => 'run_deadline_tracker',
+      createContextId: () => 'ctx_deadline_tracker',
+      setTimer: callback => { timers.push(callback); return timers.length as unknown as ReturnType<typeof setTimeout> },
+      clearTimer: () => {},
+      operationTracker: tracker,
+    }).run(validWonSummary)
+    await flushTrackerMicrotasks()
+    expect(providerCalls).toBe(1)
+    timers[0]?.()
+    try {
+      const publicResult = await run
+      const snapshot = publicResult.state
+      expect(publicResult.state.status).toBe('failed')
+      expect(publicResult.state.stopReason).toBe('total_deadline')
+      expect(publicResult.plan).toBeUndefined()
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+      await expectTrackerPending(tracker.drained)
+      providerResult.reject(new Error('late provider rejection'))
+      await expect(tracker.drained).resolves.toBeUndefined()
+      expect(publicResult.state).toBe(snapshot)
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(0)
+    } finally {
+      providerResult.resolve({ kind: 'refusal' })
+      await run
+    }
+  })
+
+  it('keeps a cancelled tool run immutable until an abort-ignoring raw rejection drains', async () => {
+    const tracker = createInFlightOperationTracker()
+    const toolResult = createDeferred<unknown>()
+    const requestAbort = new AbortController()
+    let providerCalls = 0
+    let toolExecutions = 0
+    const provider = {
+      async generateStep() {
+        providerCalls += 1
+        return { kind: 'tool_request', toolRequest: { name: 'analyze_game_performance', arguments: { gameContextId: 'ctx_tool_tracker' } } }
+      },
+    }
+    const run = new TrainingAgentOrchestrator({
+      provider,
+      registry: createTrainingToolRegistry({ execute: async () => { toolExecutions += 1; return toolResult.promise } }),
+      clock: () => 0,
+      createId: () => 'run_tool_tracker',
+      createContextId: () => 'ctx_tool_tracker',
+      signal: requestAbort.signal,
+      setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>,
+      clearTimer: () => {},
+      operationTracker: tracker,
+    }).run(validWonSummary)
+    await flushTrackerMicrotasks()
+    expect(providerCalls).toBe(1)
+    expect(toolExecutions).toBe(1)
+    requestAbort.abort()
+    try {
+      const publicResult = await run
+      const snapshot = publicResult.state
+      expect(publicResult.state.status).toBe('stopped')
+      expect(publicResult.state.stopReason).toBe('cancelled')
+      expect(publicResult.plan).toBeUndefined()
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(1)
+      await expectTrackerPending(tracker.drained)
+      toolResult.reject(new Error('late tool rejection'))
+      await expect(tracker.drained).resolves.toBeUndefined()
+      expect(publicResult.state).toBe(snapshot)
+      expect(providerCalls).toBe(1)
+      expect(toolExecutions).toBe(1)
+    } finally {
+      toolResult.resolve({})
       await run
     }
   })

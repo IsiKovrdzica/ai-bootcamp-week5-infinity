@@ -82,14 +82,17 @@ describe('T22 fixed training tool registry', () => {
 type Deferred<T> = Readonly<{
   promise: Promise<T>
   resolve(value: T): void
+  reject(reason: unknown): void
 }>
 
 const createDeferred = <T>(): Deferred<T> => {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(resolvePromise => {
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 const flushMicrotasks = async (): Promise<void> => {
@@ -136,6 +139,30 @@ describe('W08 tool raw-operation tracking', () => {
       await flushMicrotasks()
       expect(terminalOutcome).toEqual({ ok: false, reason: 'tool_failure' })
       await expect(tracker.drained).resolves.toBeUndefined()
+    } finally {
+      rawTool.resolve({})
+    }
+  })
+
+  it('drains a timed-out abort-ignoring tool after its late raw rejection without reviving the timeout outcome', async () => {
+    const tracker = createInFlightOperationTracker()
+    const rawTool = createDeferred<unknown>()
+    let executions = 0
+    const registry = createTrainingToolRegistry(
+      { execute: async () => { executions += 1; return rawTool.promise } },
+      { setTimer: callback => { callback(); return 1 as unknown as ReturnType<typeof setTimeout> }, clearTimer: () => {} },
+      tracker,
+    )
+
+    const publicOutcome = await registry.invoke('analyze_game_performance', { gameContextId: 'ctx_1' }, context, new AbortController().signal, 100, () => {})
+    expect(publicOutcome).toEqual({ ok: false, reason: 'tool_failure' })
+    expect(executions).toBe(1)
+    tracker.closeRegistration()
+    try {
+      await expectPending(tracker.drained)
+      rawTool.reject(new Error('late tool rejection'))
+      await expect(tracker.drained).resolves.toBeUndefined()
+      expect(publicOutcome).toEqual({ ok: false, reason: 'tool_failure' })
     } finally {
       rawTool.resolve({})
     }
