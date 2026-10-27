@@ -22,7 +22,7 @@ Routine work is fake-first and credential-free. Never access a real credential, 
 - [x] **H04 — PLAN-02A:** 828b7a5b6a6d9b4a6296d179eb236cdf1b5399c3.
 - [x] **H05 — PLAN-02B:** 8c705972accbaef74020d704306f28e87bdbf083.
 - [x] **H06 — PLAN-03A:** e655f98cb74d06d47bac737cae52cc2e4b0052c5.
-- [ ] **H07 — Isidora independent pair review:** not confirmed; do not mark complete without Isidora's explicit confirmation.
+- [x] **H07 — Isidora independent pair review:** completed; Mateja confirms the independent instruction/authorization review occurred.
 
 ## Phase 1 — W08 instruction authorization gate
 
