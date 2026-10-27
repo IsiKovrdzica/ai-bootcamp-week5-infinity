@@ -12,6 +12,7 @@ import { createTrainingPlannerService } from './composition.js'
 import { TrainingAgentOrchestrator } from './ai/training-orchestrator.js'
 import { ScriptedAgentModelProvider } from './ai/training-fake-provider.js'
 import { createTrainingToolRegistry } from './ai/training-tool-registry.js'
+import { analyzeGamePerformance } from './ai/training-tool.js'
 
 const validAdvice = {
   summary: 'You cleared every brick.',
@@ -200,6 +201,187 @@ describe('POST /api/ai/training-plan', () => {
     const service: TrainingPlannerService = { async createTrainingPlan() { calls += 1; return result } }
     return { service, calls: () => calls }
   }
+
+  const consistencyFinalProposal = {
+    kind: 'final' as const,
+    plan: {
+      focus: 'consistency' as const,
+      summaryEvidenceIds: ['game.outcome'] as const,
+      recommendation: {
+        action: 'repeat_completed_clear' as const,
+        evidenceIds: ['game.outcome', 'game.completion_rate'] as const,
+      },
+      evidenceIds: ['game.outcome', 'game.completion_rate'] as const,
+      confidence: 'high' as const,
+      completed: true as const,
+    },
+  }
+
+  const survivalFinalProposal = {
+    kind: 'final' as const,
+    plan: {
+      focus: 'survival' as const,
+      summaryEvidenceIds: ['game.lives'] as const,
+      recommendation: {
+        action: 'reduce_lives_lost' as const,
+        evidenceIds: ['game.lives'] as const,
+      },
+      evidenceIds: ['game.lives'] as const,
+      confidence: 'high' as const,
+      completed: true as const,
+    },
+  }
+
+  function createT01TrainingApp(finalProposal: unknown = consistencyFinalProposal) {
+    let executedToolCalls = 0
+    const provider = new ScriptedAgentModelProvider([
+      {
+        type: 'resolve',
+        value: {
+          kind: 'tool_request',
+          toolRequest: {
+            name: 'analyze_game_performance',
+            arguments: { gameContextId: 'ctx_t01' },
+          },
+        },
+      },
+      { type: 'resolve', value: finalProposal },
+    ])
+    const registry = createTrainingToolRegistry({
+      async execute(args, context) {
+        executedToolCalls += 1
+        return analyzeGamePerformance(context.gameSummary, args.gameContextId)
+      },
+    })
+    const plannerService = createTrainingPlannerService(new TrainingAgentOrchestrator({
+      provider,
+      registry,
+      clock: () => 1_000,
+      createId: () => 'run_t01',
+      createContextId: () => 'ctx_t01',
+      setTimer: () => 1 as unknown as ReturnType<typeof setTimeout>,
+      clearTimer: () => {},
+    }))
+    return {
+      app: createApp(
+        createAdviceService(new FakeAiAdviceProvider({ mode: 'success', advice: validAdvice })),
+        plannerService,
+      ),
+      providerAttempts: () => provider.adapterCallCount,
+      executedToolCalls: () => executedToolCalls,
+    }
+  }
+
+  const exactInvalidTrainingResponse = {
+    status: 400,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(invalidEnvelope),
+  }
+
+  describe('W08-027 T01 direct HTTP preflight', () => {
+    it.each([
+      ['malformed object', '{'],
+      ['truncated object', '{"outcome":"WON"'],
+      ['null', 'null'],
+      ['array', '[]'],
+      ['string scalar', '"invalid"'],
+    ])('rejects %s before provider or tool work', async (_caseName, requestBody) => {
+      const harness = createT01TrainingApp()
+
+      const response = await harness.app({ method: 'POST', path: '/api/ai/training-plan', body: requestBody })
+
+      expect(response).toEqual(exactInvalidTrainingResponse)
+      expect(harness.providerAttempts()).toBe(0)
+      expect(harness.executedToolCalls()).toBe(0)
+    })
+
+    it.each([
+      ['outcome', { score: 320, bricksDestroyed: 32, livesRemaining: 3, livesLost: 0, durationSeconds: 30 }],
+      ['score', { outcome: 'WON', bricksDestroyed: 32, livesRemaining: 3, livesLost: 0, durationSeconds: 30 }],
+      ['bricksDestroyed', { outcome: 'WON', score: 320, livesRemaining: 3, livesLost: 0, durationSeconds: 30 }],
+      ['livesRemaining', { outcome: 'WON', score: 320, bricksDestroyed: 32, livesLost: 0, durationSeconds: 30 }],
+      ['livesLost', { outcome: 'WON', score: 320, bricksDestroyed: 32, livesRemaining: 3, durationSeconds: 30 }],
+      ['durationSeconds', { outcome: 'WON', score: 320, bricksDestroyed: 32, livesRemaining: 3, livesLost: 0 }],
+    ])('rejects a summary missing %s before provider or tool work', async (_field, requestBody) => {
+      const harness = createT01TrainingApp()
+
+      const response = await harness.app({ method: 'POST', path: '/api/ai/training-plan', body: JSON.stringify(requestBody) })
+
+      expect(response).toEqual(exactInvalidTrainingResponse)
+      expect(harness.providerAttempts()).toBe(0)
+      expect(harness.executedToolCalls()).toBe(0)
+    })
+
+    it.each([
+      ['outcome', { ...validWonSummary, outcome: 42 }],
+      ['score', { ...validWonSummary, score: '320' }],
+      ['bricksDestroyed', { ...validWonSummary, bricksDestroyed: '32' }],
+      ['livesRemaining', { ...validWonSummary, livesRemaining: '3' }],
+      ['livesLost', { ...validWonSummary, livesLost: false }],
+      ['durationSeconds', { ...validWonSummary, durationSeconds: '30' }],
+    ])('rejects a summary with the wrong %s type before provider or tool work', async (_field, requestBody) => {
+      const harness = createT01TrainingApp()
+
+      const response = await harness.app({ method: 'POST', path: '/api/ai/training-plan', body: JSON.stringify(requestBody) })
+
+      expect(response).toEqual(exactInvalidTrainingResponse)
+      expect(harness.providerAttempts()).toBe(0)
+      expect(harness.executedToolCalls()).toBe(0)
+    })
+
+    it.each([
+      ['unknown outcome', { ...validWonSummary, outcome: 'PLAYING' }],
+      ['negative score', { ...validWonSummary, score: -10 }],
+      ['fractional brick count', { ...validWonSummary, bricksDestroyed: 31.5 }],
+      ['score and brick mismatch', { ...validWonSummary, score: 310 }],
+      ['brick count above the game maximum', { ...validWonSummary, score: 330, bricksDestroyed: 33 }],
+      ['remaining and lost lives that do not sum to three', { ...validWonSummary, livesRemaining: 2, livesLost: 0 }],
+      ['WON without all bricks', { ...validWonSummary, score: 310, bricksDestroyed: 31 }],
+      ['GAME_OVER with a remaining life', { ...validWonSummary, outcome: 'GAME_OVER', score: 310, bricksDestroyed: 31, livesRemaining: 1, livesLost: 2 }],
+      ['negative duration', { ...validWonSummary, durationSeconds: -1 }],
+    ])('rejects domain-invalid input: %s before provider or tool work', async (_caseName, requestBody) => {
+      const harness = createT01TrainingApp()
+
+      const response = await harness.app({ method: 'POST', path: '/api/ai/training-plan', body: JSON.stringify(requestBody) })
+
+      expect(response).toEqual(exactInvalidTrainingResponse)
+      expect(harness.providerAttempts()).toBe(0)
+      expect(harness.executedToolCalls()).toBe(0)
+    })
+
+    it.each([
+      [
+        'minimum GAME_OVER summary',
+        { outcome: 'GAME_OVER', score: 0, bricksDestroyed: 0, livesRemaining: 0, livesLost: 3, durationSeconds: 0 },
+        survivalFinalProposal,
+        'survival',
+      ],
+      [
+        'maximum-completion WON summary',
+        { outcome: 'WON', score: 320, bricksDestroyed: 32, livesRemaining: 3, livesLost: 0, durationSeconds: 0 },
+        consistencyFinalProposal,
+        'consistency',
+      ],
+    ] as const)('accepts the %s and executes the bounded planner path', async (_caseName, requestBody, finalProposal, expectedFocus) => {
+      const harness = createT01TrainingApp(finalProposal)
+
+      const response = await harness.app({ method: 'POST', path: '/api/ai/training-plan', body: JSON.stringify(requestBody) })
+
+      expect(response.status).toBe(200)
+      expect(body(response)).toMatchObject({
+        run: {
+          status: 'completed',
+          stopReason: 'completed',
+          stepCount: 2,
+          providerAttemptCount: 2,
+          toolCallCount: 1,
+        },
+        plan: { focus: expectedFocus, completed: true },
+      })
+      expect(harness.providerAttempts()).toBe(2)
+      expect(harness.executedToolCalls()).toBe(1)
+    })
+  })
 
   it('is initially a 404 while the advice route remains available', async () => {
     const { app } = createFakeApp({ mode: 'success', advice: validAdvice })
