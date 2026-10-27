@@ -24,7 +24,7 @@ Status vocabulary:
 
 Never infer one status from another. A checkbox, commit message, implementation, or historical report alone does not prove all four states.
 
-## Current checkpoint
+## Roadmap creation checkpoint
 
 | Item | Current fact |
 |---|---|
@@ -38,6 +38,10 @@ Never infer one status from another. A checkbox, commit message, implementation,
 | W08-027 focused result | 56/56 `server/app.test.ts` tests passed |
 | W08-027 regressions | Validation 34/34; composition 14/14; orchestrator/registry 88/88; W05 34/34; typecheck passed |
 | Live providers / credentials | Not used; prohibited for routine W08 work |
+
+## Current delivery status
+
+Implementation and evidence are committed through `7bd64c4`. W08-001–W08-039 have recorded technical completion evidence. The final shared evidence was reviewed and accepted by both contributors on 2026-10-27: Mateja Miletic's final technical/evidence review is APPROVED, and Isidora Prica's final shared-evidence approval is APPROVED as explicitly confirmed by Mateja. W08-040 final pair evidence acceptance is APPROVED on that explicit human confirmation. This documentation update and its commit are the remaining local delivery actions at this checkpoint; this is not a GitHub PR review, remote merge, or deployment approval.
 
 ### W08-027 completion record
 
@@ -102,19 +106,19 @@ Current architecture is a local/public demo with no authentication, session cook
 | W08-025 | Sentinel/newline containment implemented | Current suites pass | Marked complete | Preserve |
 | W08-026 | Safe errors/W05 metrics verified | Current suites pass | Marked complete | Preserve |
 | W08-027 | Test-only T01 matrix committed | 56/56 focused plus regressions pass | Accepted by Isidora; final Mateja review not claimed | Complete; next task is W08-028 |
-| W08-028 | Implemented in uncommitted real-HTTP tests | 12/12 focused plus 101/101 regressions and typecheck pass | Recorded in this tracker | Technically complete; uncommitted |
-| W08-029 | Real-browser T04/T05 harness implemented | Three security assertions, existing smoke 7/7, full suite 578/578, and typecheck pass | Recorded in this tracker | Technically complete; uncommitted |
-| W08-030 | Test-only T15 integrity proof implemented | 118/118 focused/regression tests and typecheck pass | Recorded in this tracker | Technically complete; uncommitted |
+| W08-028 | Real-HTTP tests committed in `058a901` | 12/12 focused plus 101/101 regressions and typecheck pass | Recorded in this tracker | Technically complete; pair acceptance pending |
+| W08-029 | Real-browser T04/T05 harness committed in `a546e24` | Three security assertions, existing smoke 7/7, full suite 578/578, and typecheck pass | Recorded in this tracker | Technically complete; pair acceptance pending |
+| W08-030 | T15 integrity proof committed in `058a901` | 118/118 focused/regression tests and typecheck pass | Recorded in this tracker | Technically complete; pair acceptance pending |
 | W08-031 | Production Node static/API serving and security headers implemented | Production tests 78/78, typecheck and build pass | Recorded in this tracker | Implementation complete; final real-browser CSP proof remains W08-039 |
-| W08-032 | Applicability assessment and authorized dependency remediation implemented | Full suite 573/573, focused HTTP/app 68/68, typecheck and build pass; both audits clean | Recorded in this tracker | Technically complete; uncommitted |
-| W08-033 | Public 429 mapping implemented | RED 2 failures at 503; GREEN/regression 92/92 and typecheck pass | Approved decision and results recorded here | Technically complete; uncommitted |
-| W08-034 | Approved 413 mapping implemented | RED 4 failures at 400; GREEN/regression 95/95 and typecheck pass | Approved decision and results recorded here | Technically complete; uncommitted |
-| W08-035 | Premature-disconnect signal propagation implemented | RED 2 failures; focused 19/19, lifecycle regressions 164/164, typecheck pass | Approved decision and results recorded here | Technically complete; uncommitted |
+| W08-032 | Dependency remediation committed in `a2eacad` | Full suite 573/573, focused HTTP/app 68/68, typecheck and build pass; both audits clean | Recorded in this tracker | Technically complete; pair acceptance pending |
+| W08-033 | Public 429 mapping committed in `058a901` | RED 2 failures at 503; GREEN/regression 92/92 and typecheck pass | Approved decision and results recorded here | Technically complete; pair acceptance pending |
+| W08-034 | Approved 413 mapping committed in `058a901` | RED 4 failures at 400; GREEN/regression 95/95 and typecheck pass | Approved decision and results recorded here | Technically complete; pair acceptance pending |
+| W08-035 | Disconnect propagation committed in `058a901` | RED 2 failures; focused 19/19, lifecycle regressions 164/164, typecheck pass | Approved decision and results recorded here | Technically complete; pair acceptance pending |
 | W08-036 | T00 acceptance reproduced | 145/145 focused W03/W05/state tests and browser smoke 7/7 pass | Recorded in this tracker | Technically accepted by Isidora; final Mateja review not claimed |
-| W08-037 | Real-HTTP T17 A/B/C chain implemented | HTTP/composition/event 86/86 pass | Recorded in this tracker | Technically complete; uncommitted |
-| W08-038 | Verification complete | 40 files / 586 tests, typecheck, build, and both audits pass | Recorded in this tracker | Final review/commit pending |
-| W08-039 | Production browser/CSP verification complete | Production script 5/5, browser security 3/3, smoke 7/7 | Recorded in this tracker | Final review/commit pending |
-| W08-040 | Evidence/handoff in progress | Root evidence and SpecKit reconciliation prepared | Final Mateja review not performed | Review, corrections, and commit remain pending |
+| W08-037 | Real-HTTP T17 A/B/C chain committed in `058a901` | HTTP/composition/event 86/86 pass | Recorded in this tracker | Technically complete; pair acceptance pending |
+| W08-038 | Verification complete | 40 files / 586 tests, typecheck, build, and both audits pass | Recorded in this tracker | Final review pending |
+| W08-039 | Production browser/CSP verification committed in `a546e24` | Production script 5/5, browser security 3/3, smoke 7/7 | Recorded in this tracker | Final review pending |
+| W08-040 | Evidence/handoff committed in `7bd64c4` | Root evidence and SpecKit reconciliation prepared | Final pair evidence acceptance APPROVED on 2026-10-27 by explicit human confirmation from Mateja on behalf of both contributors | This documentation update and commit remain local delivery actions; remote merge/push is not performed |
 
 ## I1–I8 traceability
 
@@ -164,7 +168,7 @@ The earlier I1–I8 and T00–T17 tables preserve the state at roadmap creation.
 - T05 is the applicable text-only rendering branch; no rich renderer was added.
 - T09 proves policy enforcement against a deterministic malicious provider proposal and does not claim a live-model guarantee.
 - T02/T03/T12/T13/T15/T17 use real Node HTTP; T04/T05/T16 use real Chromium; T16 serves the actual production build.
-- Final Mateja review, requested corrections, explicit pair acceptance, and Git commits remain pending. Technical PASS does not imply those human/delivery states.
+- The implementation and evidence commits are present through `7bd64c4`; final pair evidence acceptance is APPROVED on explicit human confirmation. Remote delivery remains separate and is not implied by this approval.
 
 ### Real Node HTTP
 
@@ -327,7 +331,7 @@ The major upgrade was explicitly authorized and executed. `package.json` now pin
 - **Commands:** route, network, transport/controller, composition tests; typecheck.
 - **Evidence:** RED/GREEN response, counters, decision reference.
 - **Forbidden:** 413, abort, admission algorithm, new policy fields.
-- **Stop:** shared-contract diff review; final Mateja review remains factual/pending until performed.
+- **Stop:** shared-contract diff review; final Mateja review was recorded only when subsequently performed through explicit human confirmation.
 
 ### W08-034 — 400 versus 413
 
@@ -457,6 +461,8 @@ Update this table after each approved task. Record actual results only.
 
 | Date | Task | Start checkpoint | Files changed | Expected result | Observed result | Verification | Commit | Review / limitations | Next authorized task |
 |---|---|---|---|---|---|---|---|---|---|
+Historical note: the `Uncommitted` entries in the following execution ledger accurately describe the pre-commit state at the time each task was recorded. They do not describe the current checkpoint, where the implementation/evidence commits through `7bd64c4` are present and final explicit pair acceptance remains pending.
+
 | 2026-10-27 | W08-027 | `d75faaf` | `server/app.test.ts` | T01 invalid `0/0`; valid `2/1` | 26 invalid and 2 valid cases passed immediately; existing protection verified | App 56/56; validation 34/34; composition 14/14; orchestrator/registry 88/88; W05 34/34; typecheck and diff check passed | `ae65e8f` | Accepted by Isidora; no production change; no final Mateja review claimed | W08-028 |
 | 2026-10-27 | W08-028 | `ae65e8f` | `server/http-security.integration.test.ts`, this tracker | T02 real HTTP byte/privilege enforcement; T03 public/demo context no-escape | 12/12 focused passed: exact 16 KiB valid request `1/2/1` admission/provider/tool; +1, chunked, multibyte and six privilege variants `0/0/0`; mismatched context `1/1/0`, matching `1/2/1` | Focused 12/12; app/validation/registry 101/101; typecheck passed | Uncommitted | Initial sandbox run blocked at Vite config access; identical approved run passed. Current oversized response remains 400. No private per-user resources exist. | W08-032 |
 | 2026-10-27 | W08-032 remediation gate | `ae65e8f` plus uncommitted W08-028 | This tracker only | Determine smallest safe remediation without automatic major upgrade | Production audit 0; full audit 5 dev entries. Vite 7.3.7 and source-map-js 1.2.2 are compatible fixes, but Vitest 3 has no patched release; minimum identified stable major is 4.1.12. | Full/production audit, dependency paths, registry versions, and official advisory conditions reviewed; package/lock diff empty | Uncommitted | Major-upgrade stop triggered. No tests/build rerun because no dependency changed. | BLOCKED pending Vitest-major decision |
@@ -472,12 +478,12 @@ Update this table after each approved task. Record actual results only.
 
 | 2026-10-27 | W08-038 | `ae65e8f` plus prior uncommitted checkpoints | This tracker only | Reproduce the full deterministic baseline and dependency state | All deterministic tests, typecheck, production build, and both audits passed | 40 files/586 tests; typecheck pass; build pass (13 modules); `npm audit` 0; `npm audit --omit=dev` 0 | Uncommitted | No live provider, credentials, `.env`, or forbidden check used | W08-039 |
 | 2026-10-27 | W08-039 | `ae65e8f` plus prior uncommitted checkpoints | `scripts/w08-production-security.mjs`, this tracker | Actual built-site CSP/header/asset/AI proof plus real-browser T04/T05 | Production game and both fake-backed AI flows worked; required headers were present; controlled second-origin script was reachable but blocked by CSP; isolated synthetic server configuration was loaded and absent from HTTP/build output | Production security 5/5; browser security 3/3; smoke 7/7 | Uncommitted | Real Chromium against actual `dist`; textual automated evidence, no fabricated screenshot; no live provider | W08-040 |
-| 2026-10-27 | W08-040 | `ae65e8f` plus all uncommitted W08 checkpoints | `EVIDENCE_W08.md`, SpecKit status artifacts, this tracker | Reconcile actual evidence and prepare handoff/demo without claiming unperformed review | Root evidence and status reconciliation prepared; final Mateja review, requested corrections, explicit pair acceptance, and commits remain pending | Final diff and verification reported at handoff | Uncommitted | Week 8 is not final/accepted until the pending human review and Git checkpoints occur | Human review |
+| 2026-10-27 | W08-040 | `ae65e8f` plus all uncommitted W08 checkpoints | `EVIDENCE_W08.md`, SpecKit status artifacts, this tracker | Reconcile actual evidence and prepare handoff/demo without claiming unperformed review | Historical pre-commit handoff state: final Mateja review, requested corrections, explicit pair acceptance, and commits remained pending | Final diff and verification reported at handoff | Uncommitted | Historical state only; later explicit pair evidence acceptance is recorded above | Human review |
 | 2026-10-27 | Final independent acceptance audit | `ae65e8f` plus all uncommitted W08 checkpoints | `scripts/w08-production-security.mjs`, `EVIDENCE_W08.md`, SpecKit reconciliation, this tracker | Independently challenge every assignment claim and close factual evidence gaps | Corrected contributor name; added loaded synthetic-server-config containment proof; exact mapping/demo and checkpoint-based comparisons; no technical acceptance failure found | 586/586; HTTP 20/20; browser 3/3; production 5/5; smoke 7/7; typecheck/build pass; audits 0/0; diff check pass | Uncommitted | Browser smoke and real orchestrator proof are separate; Mateja final review and Git delivery remain pending | Human review |
 
 ## Current execution task: W08-040 handoff review
 
-Technical implementation and reproducible verification through W08-039 are complete. W08-040 documentation is prepared, but final Mateja review, any requested corrections, explicit pair acceptance, and commits are still pending. No such review or acceptance is inferred from implementation delegation.
+Technical implementation and reproducible verification through W08-039 are complete, with implementation/evidence commits present through `7bd64c4`. W08-040 final pair evidence acceptance is APPROVED on 2026-10-27 by explicit human confirmation from Mateja on behalf of both contributors. This records evidence acceptance only; it does not imply a GitHub review, remote push, merge, or deployment approval.
 
 ### Approved shared HTTP/lifecycle decisions — 2026-10-27
 

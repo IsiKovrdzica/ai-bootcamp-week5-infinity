@@ -6,10 +6,10 @@ This record separates planned, executed, observed, and pending work. All securit
 
 - Team: Isidora Prica (HTTP/browser/platform and remaining shared implementation driver); Mateja Miletic (admission, agent/tool, lifecycle, and event controls; final reviewer pending).
 - Project: BrickPulse W03 game, W04 AI Coach, and W05 Training Planner.
-- Repository: `ai-bootcamp-week5-infinity`, branch `008-secure-the-arcade`.
+- Repository: `ai-bootcamp-week3-infinity`, branch `008-secure-the-arcade`.
 - W08 start: `646ddf4adc5158e4a53cdaf296c9627ee0bf5056`.
 - W08-027 checkpoint: `ae65e8f23dff631857d9b4d03afdd943191a025d`.
-- Current implementation checkpoint: `ae65e8f` plus intentional uncommitted W08-028–W08-040 changes. Final commit is pending authorization.
+- Reviewed implementation checkpoint: `7bd64c4`. The committed progression after W08-027 is `a2eacad` (dependency remediation), `058a901` (HTTP and request-lifecycle security), `a546e24` (production/browser security), and `7bd64c4` (final evidence and handoff documentation). Final explicit pair acceptance remains open.
 - Environment: Windows, Node `v24.20.0`, npm `11.19.0`, Playwright Chromium.
 - Initial reproduced baseline before W08-027: 38 files / 533 tests passed; typecheck and production build passed.
 - Final technical baseline: 40 files / 586 tests passed; typecheck and production build passed; both npm audits reported zero findings.
@@ -174,14 +174,14 @@ Existing good W05 controls were not removed to manufacture vulnerable “before�
 | Production T16 | `node scripts/w08-production-security.mjs` | 5/5 assertions passed, including loaded synthetic server configuration containment | Controlled second origin |
 | Existing smoke | `npm run smoke` | 7/7 passed | Deterministic local fake |
 | Dependency audit | `npm audit`; `npm audit --omit=dev` | 0; 0 | Snapshot at this lockfile |
-| Diff hygiene | `git diff --check` | see final handoff result | Work remains uncommitted |
+| Diff hygiene | `git diff --check` | passed at the recorded final audit | Reviewed checkpoint `7bd64c4` had a clean working tree |
 
 Reset between deterministic tests is provided by fresh app/provider/registry/admission instances and closed servers/browser contexts. The forbidden `npm run check`/frontend-boundary command was not run.
 
 ## 9. Conclusions and residual risk
 
 - Technically demonstrated at the current worktree: I1–I8 and T00–T17, including real HTTP, real Chromium, production CSP/headers, clean audits, and W03–W05 regressions.
-- Not yet complete: Mateja's final review, any corrections he requests, explicit pair acceptance, authorized commits, and push/merge (not authorized here).
+- Not yet complete: Mateja's final review, any corrections he requests, explicit pair acceptance, and any separately authorized push/merge.
 - Local/fake limitation: provider behavior and cancellation are deterministic; abort signals do not guarantee a remote service stops processing or billing.
 - Process limitation: admission state is in-memory per Node process and is not a distributed/global rate limiter.
 - Public-demo limitation: no identity/private-resource security is claimed because those features do not exist.
@@ -220,16 +220,18 @@ Defense points: name the enforcing boundary before describing the test; explain 
 - [x] Production build, CSP/headers, asset scan, typecheck, and audits passed.
 - [x] W03–W05 behavior preserved in deterministic regressions.
 - [x] Root evidence and SpecKit execution reconciliation prepared.
-- [ ] Mateja final review performed and recorded factually.
-- [ ] Requested corrections, if any, completed and reverified.
-- [ ] Explicit final pair acceptance recorded.
-- [ ] Final commits/push handled only with separate authorization.
+- [x] Mateja Miletic final technical/evidence review: APPROVED on 2026-10-27.
+- [x] Requested documentation corrections completed and reviewed.
+- [x] Isidora Prica final shared-evidence approval: APPROVED on 2026-10-27, as explicitly confirmed by Mateja.
+- [x] W08-040 final pair evidence acceptance: APPROVED on 2026-10-27 by explicit human confirmation from Mateja on behalf of both contributors.
+- [x] Reviewed W08 implementation and evidence commits are present through `7bd64c4`.
+- [ ] Any push/merge is handled only with separate authorization.
 
-Week 8 is technically ready for human review, but is not claimed as finally accepted or delivered.
+This records evidence acceptance only. It is not a GitHub PR review, remote merge, deployment approval, or claim that `origin/main` has been updated. This documentation update and its commit remain the local delivery actions at this checkpoint.
 
 ## 13. Final independent acceptance audit — 2026-10-27
 
-The audit re-read the official assignment/template, SpecKit artifacts, contracts, implementation, tests, scripts, complete tracked diff, and every untracked file. It did not rely on the roadmap status labels. One evidence gap was corrected: the production script now proves an isolated synthetic server configuration was actually loaded and remained absent from HTTP output and built assets. Documentation was corrected to name Isidora Prica, identify exact tests/enforcement, make the three historical comparisons checkpoint-based, and distinguish browser UI smoke from the separate real orchestrator/tool proof.
+The audit re-read the official assignment/template, SpecKit artifacts, contracts, implementation, tests, scripts, complete tracked diff, and every untracked file at its historical pre-commit checkpoint. It did not rely on the roadmap status labels. One evidence gap was corrected: the production script now proves an isolated synthetic server configuration was actually loaded and remained absent from HTTP output and built assets. Documentation was corrected to name Isidora Prica, identify exact tests/enforcement, make the three historical comparisons checkpoint-based, and distinguish browser UI smoke from the separate real orchestrator/tool proof.
 
 Observed final commands:
 
@@ -245,11 +247,11 @@ Observed final commands:
 - `git diff --check`: passed.
 - Installed tree: Vite 7.3.7, Vitest/@vitest/mocker 4.1.12, source-map-js 1.2.2; Tinypool absent.
 
-Diff inspection found 12 intentional modified tracked files and 7 intentional untracked W08 files. No unexpected temporary artifact or credential-like token was found. The synthetic fixture appears only in authorized test/spec/script contexts and not in the built client artifacts or recorded operational output.
+At that historical pre-commit checkpoint, diff inspection found 12 intentional modified tracked files and 7 intentional untracked W08 files. Those reviewed changes are now committed through `7bd64c4`. No unexpected temporary artifact or credential-like token was found. The synthetic fixture appears only in authorized test/spec/script contexts and not in the built client artifacts or recorded operational output.
 
 | Acceptance area | Result | Remaining gap |
 |---|---|---|
 | Official controls, I1–I8, T00–T17 | PASS | Local/fake and one-process limitations stated above |
-| Evidence-template content and executable demo | PASS | Final commit hash/link cannot exist before authorization |
+| Evidence-template content and executable demo | PASS | Reviewed commits are present through `7bd64c4`; final pair acceptance is recorded above |
 | SpecKit technical reconciliation | PASS | Historical planning checkboxes are preserved and explicitly superseded by the reconciliation record |
-| Final pair review and delivery | PARTIAL | Mateja final review, corrections if requested, explicit pair acceptance, commits, and any authorized push remain pending |
+| Final pair review and delivery | APPROVED for W08-040 evidence acceptance | Explicit human pair acceptance is recorded above; any authorized push/merge remains pending |
