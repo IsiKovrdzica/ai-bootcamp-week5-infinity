@@ -35,6 +35,16 @@ describe('T21 deterministic performance analysis', () => {
     expect(result).not.toHaveProperty('focus')
     expect(result).not.toHaveProperty('recommendation')
   })
+
+  it('does not mutate its authorized terminal-summary input', () => {
+    const summary = structuredClone(validWonSummary)
+    const summaryBefore = structuredClone(summary)
+
+    const result = analyzeGamePerformance(summary, 'ctx_read_only')
+
+    expect(result.score).toBe(320)
+    expect(summary).toEqual(summaryBefore)
+  })
 })
 
 describe('T22 result validation', () => {

@@ -21,7 +21,7 @@ export type TrainingPlannerServiceResult =
   | { readonly kind: 'unavailable'; readonly run: PublicTrainingRun; readonly admissionDeniedReason: 'rate_limited' | 'concurrency_limited' }
 
 export type TrainingPlannerService = {
-  createTrainingPlan(input: unknown): Promise<TrainingPlannerServiceResult>
+  createTrainingPlan(input: unknown, options?: { signal?: AbortSignal }): Promise<TrainingPlannerServiceResult>
 }
 
 export type TrainingPlannerServiceFactory = (
@@ -48,7 +48,7 @@ export type TrainingPlannerServiceOptions = Readonly<{
 }>
 
 type TrackerAwareTrainingOrchestrator = Readonly<{
-  run(input: unknown, tracker?: InFlightOperationTracker, securityEvents?: TrainingSecurityEventContext): ReturnType<TrainingAgentOrchestrator['run']>
+  run(input: unknown, tracker?: InFlightOperationTracker, securityEvents?: TrainingSecurityEventContext, signal?: AbortSignal): ReturnType<TrainingAgentOrchestrator['run']>
 }>
 
 const unavailableService: AdviceService = {
@@ -94,10 +94,10 @@ export function createTrainingPlannerService(
   const createSecurityCorrelationId = options.createSecurityCorrelationId ?? (() => globalThis.crypto.randomUUID().replaceAll('-', ''))
 
   return {
-    async createTrainingPlan(input) {
+    async createTrainingPlan(input, invocationOptions) {
       const initial = validateTrainingInitialSummary(input)
       if (!initial.ok) {
-        const result = await orchestrator.run(input)
+        const result = await orchestrator.run(input, undefined, undefined, invocationOptions?.signal)
         const run = projectTrainingRun(result)
         return run.status === 'stopped' ? { kind: 'rejected', run } : { kind: 'unavailable', run }
       }
@@ -164,7 +164,7 @@ export function createTrainingPlannerService(
       ).catch(() => {})
 
       try {
-        const result = await orchestrator.run(input, operationTracker, securityEvents)
+        const result = await orchestrator.run(input, operationTracker, securityEvents, invocationOptions?.signal)
         const run = projectTrainingRun(result)
         if (run.status === 'completed' && result.plan) return { kind: 'completed', run, plan: result.plan }
         return run.status === 'stopped' ? { kind: 'rejected', run } : { kind: 'unavailable', run }

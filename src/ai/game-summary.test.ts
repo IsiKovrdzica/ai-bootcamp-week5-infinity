@@ -54,6 +54,25 @@ describe('terminal GameSummary derivation', () => {
     })
   })
 
+  it('returns a detached unverified snapshot whose browser-side mutation cannot alter canonical game state', () => {
+    const state = freshState()
+    state.status = 'WON'
+    state.score = 320
+    state.durationSeconds = 30
+    state.bricks.forEach(brick => { brick.alive = false })
+    const stateBefore = structuredClone(state)
+    const summary = deriveGameSummary(state)
+    if (!summary) throw new Error('expected terminal summary')
+
+    summary.score = 999
+    summary.bricksDestroyed = 0
+
+    expect(state).toEqual(stateBefore)
+    expect(state.score).toBe(320)
+    expect(state.bricks.every(brick => !brick.alive)).toBe(true)
+    expect(Object.keys(summary)).not.toContain('verified')
+  })
+
   it.each(['READY', 'RUNNING'] as const)(
     'rejects non-terminal %s state',
     (status) => {

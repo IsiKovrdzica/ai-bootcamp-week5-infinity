@@ -131,7 +131,7 @@ describe('POST /api/ai/advice', () => {
       body: 'x'.repeat(16 * 1024 + 1),
     })
 
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(413)
     expect(body(response)).toEqual(invalidEnvelope)
     expect(provider.providerCallCount).toBe(0)
   })
@@ -416,12 +416,16 @@ describe('POST /api/ai/training-plan', () => {
     expect(provider.adapterCallCount).toBe(2)
   })
 
-  it.each(['{', 'x'.repeat(16 * 1024 + 1), JSON.stringify({ ...validWonSummary, outcome: 'PLAYING' })])(
-    'returns the exact 400 envelope before planner work for invalid input', async (input) => {
+  it.each([
+    ['malformed JSON', '{', 400],
+    ['oversized body', 'x'.repeat(16 * 1024 + 1), 413],
+    ['domain-invalid summary', JSON.stringify({ ...validWonSummary, outcome: 'PLAYING' }), 400],
+  ])(
+    'returns the exact safe envelope before planner work for %s', async (_name, input, expectedStatus) => {
       const fake = planner({ kind: 'completed', run: completedRun, plan: completedPlan })
       const app = createApp(createAdviceService(new FakeAiAdviceProvider({ mode: 'success', advice: validAdvice })), fake.service)
       const response = await app({ method: 'POST', path: '/api/ai/training-plan', body: input })
-      expect(response).toEqual({ status: 400, headers: { 'content-type': 'application/json' }, body: JSON.stringify(invalidEnvelope) })
+      expect(response).toEqual({ status: expectedStatus, headers: { 'content-type': 'application/json' }, body: JSON.stringify(invalidEnvelope) })
       expect(fake.calls()).toBe(0)
     },
   )

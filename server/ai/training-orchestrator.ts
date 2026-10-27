@@ -94,7 +94,7 @@ export class TrainingActionGuard {
   snapshot(): readonly string[] { return Object.freeze([...this.executed]) }
 }
 export class TrainingAgentOrchestrator { constructor(private readonly deps:TrainingOrchestratorDependencies & SecurityEventDependencies) {}
- async run(input:unknown, invocationOperationTracker?:InFlightOperationTracker, invocationSecurityEvents?:TrainingSecurityEventContext):Promise<TrainingRunResult>{
+ async run(input:unknown, invocationOperationTracker?:InFlightOperationTracker, invocationSecurityEvents?:TrainingSecurityEventContext, invocationSignal?:AbortSignal):Promise<TrainingRunResult>{
   const operationTracker=invocationOperationTracker??this.deps.operationTracker??createInFlightOperationTracker()
   const actionGuard = new TrainingActionGuard(this.deps.initialActionFingerprints)
   const runId=this.deps.createId(), gameContextId=this.deps.createContextId();
@@ -122,13 +122,14 @@ if(!initial.ok){finish('stopped','invalid_model_proposal');operationTracker.clos
 return{state,transitions,progressVersions}} const summary=initial.value as Readonly<GameSummary>;
 startedAt=this.deps.clock(); deadline=startedAt+30000;
 state={...state,startedAtMs:startedAt,deadlineAtMs:deadline};
+const externalSignal=invocationSignal??this.deps.signal;
 const runAbort=new AbortController(),external=()=>runAbort.abort();
-this.deps.signal?.addEventListener('abort',external,{once:true});
+externalSignal?.addEventListener('abort',external,{once:true});
 const setTimer=this.deps.setTimer??((c,m)=>setTimeout(c,m) as ReturnType<typeof setTimeout>),clearTimer=this.deps.clearTimer??(t=>clearTimeout(t));
 let deadlineExpired=false;
 const timer=setTimer(()=>{deadlineExpired=true;
 runAbort.abort()},30000);
- const stopped=()=>this.deps.signal?.aborted?'cancelled' as const:deadlineExpired||runAbort.signal.aborted||this.deps.clock()>=state.deadlineAtMs?'total_deadline' as const:undefined;
+ const stopped=()=>externalSignal?.aborted?'cancelled' as const:deadlineExpired||runAbort.signal.aborted||this.deps.clock()>=state.deadlineAtMs?'total_deadline' as const:undefined;
 
   const request=(phase:ModelStepRequest['phase'],n:1|2|3):ModelStepRequest=>Object.freeze({schemaVersion:1,promptVersion:'brickpulse-training-planner/v1',phase,goal:state.goal,gameSummary:Object.freeze({...summary}),run:Object.freeze({runId:state.runId,gameContextId:state.gameContextId,contextVersion:state.contextVersion,stepNumber:n,remainingSteps:(3-n)as 0|1|2,remainingToolCalls:(2-state.toolCallCount)as 0|1|2,remainingProviderAttempts:6-state.providerAttemptCount,deadlineAt:new Date(state.deadlineAtMs).toISOString()}),availableTools:phase==='select_tool'?Object.freeze([descriptor]):Object.freeze([]),evidence:state.validatedEvidence??null});
 
@@ -168,7 +169,7 @@ runAbort.signal.removeEventListener('abort',link);
 attemptAbort.signal.removeEventListener('abort',rejectOnAbort);
 emit('provider_attempt_settled',{attemptKind:i===0?'initial':route==='fallback'?'fallback':'retry',providerCategory:route==='fallback'?'fixed_fallback':'primary',attemptLatencyMs:Math.max(0,Math.floor(this.deps.clock()-attemptStartedAt)),outcome:'failure',...(tokenUsage?{tokenUsage}:{})});
 if(deadlineExpired){finish('failed','total_deadline');
-return}if(this.deps.signal?.aborted){finish('stopped','cancelled');
+return}if(externalSignal?.aborted){finish('stopped','cancelled');
 return}if(attemptAbort.signal.aborted){finish('failed','provider_failure');
 return}if(e instanceof ProviderFailure&&e.kind==='client_cancelled'){finish('stopped','cancelled');
 return}const kind=e instanceof ProviderFailure?e.kind:'programming',retry=kind==='transient',fallback=kind==='provider_unavailable'&&!!this.deps.fallbackProvider;
@@ -197,7 +198,7 @@ state={...state,phase:'executing_tool'};
 transitions.push('executing_tool');
 const invoked=await this.deps.registry.invoke(proposal.value.toolRequest.name,proposal.value.toolRequest.arguments,{gameSummary:summary,gameContextId:state.gameContextId},runAbort.signal,Math.min(100,state.deadlineAtMs-this.deps.clock()),()=>{state={...state,toolCallCount:state.toolCallCount+1}},operationTracker);
 emit('tool_execution_settled',{outcome:invoked.ok?'success':'failure',toolName:'analyze_game_performance'});
-if (this.deps.signal?.aborted) { finish('stopped', 'cancelled'); return { state, transitions, progressVersions } }
+if (externalSignal?.aborted) { finish('stopped', 'cancelled'); return { state, transitions, progressVersions } }
 if (deadlineExpired || this.deps.clock() >= state.deadlineAtMs) { finish('failed', 'total_deadline'); return { state, transitions, progressVersions } }
 if(!invoked.ok){if(invoked.reason==='invalid_tool_result')reportSecurity('planner.result_rejected','rejected',{reasonCode:'TOOL_RESULT_INVALID'});finish(invoked.reason==='tool_failure'||invoked.reason==='invalid_tool_result'?'failed':'stopped',invoked.reason as TrainingPlanStopReason);
 return{state,transitions,progressVersions}}const evidence=invoked.value as PerformanceAnalysisResult;
@@ -214,4 +215,4 @@ progressVersions.push(2);
 emit('final_validated',{outcome:'validated'});
 finish('completed','completed',rendered.value);
 return{state,plan:rendered.value,transitions,progressVersions}}finally{operationTracker.closeRegistration();clearTimer(timer);
-this.deps.signal?.removeEventListener('abort',external)}}}
+externalSignal?.removeEventListener('abort',external)}}}

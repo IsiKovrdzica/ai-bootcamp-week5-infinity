@@ -16,6 +16,7 @@ export type AppRequest = {
   method: string
   path: string
   body: string
+  signal?: AbortSignal
 }
 
 export type AppResponse = {
@@ -38,6 +39,10 @@ function invalidSummaryResponse(): AppResponse {
   return jsonResponse(400, INVALID_GAME_SUMMARY_ERROR)
 }
 
+function payloadTooLargeResponse(): AppResponse {
+  return jsonResponse(413, INVALID_GAME_SUMMARY_ERROR)
+}
+
 function unavailableResponse(): AppResponse {
   return jsonResponse(503, AI_ADVICE_UNAVAILABLE_ERROR)
 }
@@ -48,6 +53,10 @@ function trainingRejectedResponse(run: unknown): AppResponse {
 
 function trainingUnavailableResponse(run: unknown): AppResponse {
   return jsonResponse(503, { run, error: { code: 'TRAINING_PLAN_UNAVAILABLE', message: 'Training plan is temporarily unavailable. Please try again later.' } })
+}
+
+function trainingAdmissionDeniedResponse(run: unknown): AppResponse {
+  return jsonResponse(429, { run, error: { code: 'TRAINING_PLAN_ADMISSION_DENIED', message: 'Training plan is temporarily unavailable. Please try again later.' } })
 }
 
 export function createApp(service: AdviceService, trainingPlanner?: TrainingPlannerService): AppHandler {
@@ -61,7 +70,7 @@ export function createApp(service: AdviceService, trainingPlanner?: TrainingPlan
       return jsonResponse(405, { error: { code: 'METHOD_NOT_ALLOWED' } })
     }
     if (Buffer.byteLength(request.body, 'utf8') > MAX_REQUEST_BODY_BYTES) {
-      return invalidSummaryResponse()
+      return payloadTooLargeResponse()
     }
 
     let parsedBody: unknown
@@ -79,8 +88,9 @@ export function createApp(service: AdviceService, trainingPlanner?: TrainingPlan
     if (isTrainingPlan) {
       if (!trainingPlanner) return jsonResponse(404, { error: { code: 'NOT_FOUND' } })
       try {
-        const result = await trainingPlanner.createTrainingPlan(summaryValidation.value)
+        const result = await trainingPlanner.createTrainingPlan(summaryValidation.value, { signal: request.signal })
         if (result.kind === 'completed') return jsonResponse(200, { run: result.run, plan: result.plan })
+        if (result.kind === 'unavailable' && 'admissionDeniedReason' in result) return trainingAdmissionDeniedResponse(result.run)
         return result.kind === 'rejected' ? trainingRejectedResponse(result.run) : trainingUnavailableResponse(result.run)
       } catch {
         return trainingUnavailableResponse({ runId: 'unavailable', status: 'failed', stopReason: 'provider_failure', stepCount: 0, providerAttemptCount: 0, toolCallCount: 0, elapsedMs: 0 })
@@ -108,6 +118,14 @@ export function createNodeHttpHandler(handler: AppHandler) {
     const chunks: Buffer[] = []
     let byteLength = 0
     let responded = false
+    const requestAbort = new AbortController()
+
+    request.on('aborted', () => requestAbort.abort())
+    response.on('close', () => {
+      if (response.writableFinished) return
+      responded = true
+      requestAbort.abort()
+    })
 
     const write = (result: AppResponse) => {
       if (responded) return
@@ -120,7 +138,7 @@ export function createNodeHttpHandler(handler: AppHandler) {
       byteLength += chunk.length
       if (byteLength > MAX_REQUEST_BODY_BYTES) {
         request.resume()
-        write(invalidSummaryResponse())
+        write(payloadTooLargeResponse())
         return
       }
       chunks.push(chunk)
@@ -136,6 +154,7 @@ export function createNodeHttpHandler(handler: AppHandler) {
         method: request.method ?? '',
         path: request.url ?? '',
         body: Buffer.concat(chunks).toString('utf8'),
+        signal: requestAbort.signal,
       }).then(write, () => write(unavailableResponse()))
     })
   }
