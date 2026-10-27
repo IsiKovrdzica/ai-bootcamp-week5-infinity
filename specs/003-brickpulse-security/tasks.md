@@ -85,6 +85,14 @@ Routine work is fake-first and credential-free. Never access a real credential, 
 - [ ] **W08-039 [SHARED] — Complete browser smoke/CSP in TCP-capable environment.** Depends on W08-029/W08-031/W08-038. Targets: smoke/browser/CSP harness and factual evidence. Outcome: T04/T05/T16 run where TCP serving works; no sentinel in browser artifacts. Verification: actual browser and blocked-resource proof. STOP: EPERM remains BLOCKED.
 - [ ] **W08-040 [SHARED] — Complete evidence and handoff.** Depends on W08-038/W08-039 and explicit pair review. Targets: new EVIDENCE_W08.md, Git metadata, approved task checkboxes. Outcome: actual commands, fixtures, expected/observed outcomes, counters, before/after comparisons, checkpoints, limitations, pair decisions; no raw payload/secret/sentinel. Verification: pair audit, git diff --check, intentional-path review, clean status. STOP: no completion/commit claim without both owners.
 
+## Execution reconciliation — 2026-10-27
+
+The original task checkboxes and descriptions below/above are retained as historical planning and audit records; they are not the current execution-status authority. Reproduced implementation and test evidence establishes W08-001 through W08-039 as technically complete. W08-040 documentation is prepared but the task remains open for Mateja's final review, requested corrections, explicit pair acceptance, and authorized Git commits. H07 was performed and used to authorize execution, but does not imply Mateja later reviewed the completed implementation.
+
+For avoidance of doubt, unchecked boxes in the historical sections mean “not rewritten after the original gated plan”; they do **not** mean the technical task is currently unimplemented. Current verified status is: `H07 = review gate complete`; `W08-001–W08-039 = technically complete`; `W08-040 = PARTIAL/pending final human review, corrections if requested, explicit pair acceptance, and Git delivery`. The exact per-task evidence, including which work was regression-only versus RED/GREEN, is in `docs/W08_EXECUTION_ROADMAP.md`. This reconciliation deliberately does not mark W08-040 complete.
+
+Exact commands, counters, limitations, and per-task paths are recorded in `docs/W08_EXECUTION_ROADMAP.md` and root `EVIDENCE_W08.md`. No live provider, credential, `.env` source, or forbidden frontend-boundary command was used. The private-resource and CSRF branches are N/A because this local public demo has no authentication, ambient cookie credential, private resource store, or resource-ID lookup; the actual public/local boundary was nevertheless tested.
+
 ## Scenario traceability
 
 | Scenario | Task(s) | Planned proof |

@@ -35,9 +35,10 @@
 - [x] The normal W05 success path remains an acceptance requirement, not a removable feature.
 - [x] All limits that already exist are identified; concrete W08 aggregate admission/rate numbers are deferred to the plan as a material design decision.
 - [x] The feature is specific enough for pair review and a later `/speckit.plan` task.
-- [ ] Human pair review/approval received before planning.
+- [x] H07 independent route/contract review was completed before implementation authorization.
+- [ ] Final Mateja review of the completed implementation and explicit pair acceptance received.
 
 ## Notes
 
 - This checklist certifies specification coverage only. It does not claim T00–T17 are implemented or passing.
-- Browser smoke and production-header verification require an environment that permits local serving; the current sandbox returns `EPERM` for loopback binding.
+- Real Chromium browser smoke and production-header/CSP verification later ran successfully in a TCP-capable environment; see `EVIDENCE_W08.md`. Final human acceptance remains pending.

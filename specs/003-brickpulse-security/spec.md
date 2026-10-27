@@ -2,7 +2,7 @@
 
 **Feature branch**: `008-secure-the-arcade`
 **Created**: 2026-10-26
-**Status**: Draft for pair review — specification only
+**Status**: Implemented and verified through W08-039; W08-040 final Mateja review and explicit pair acceptance pending
 **Source authority**: W08 “Secure the Arcade” assignment supplied by the user; preserved W03–W05 specifications and repository instructions.
 
 ## Scope and non-goals
@@ -148,7 +148,13 @@ Isidora owns HTTP input/access tests, browser XSS checks, CSP/security headers, 
 2. **T09/T07**: preserve the current registry rejection baseline for an injection-directed unknown tool; after, record the same counters plus W08 safe security event. This is a regression/control comparison, not a claim that a vulnerability existed.
 3. **T14/T10**: before, existing validator rejects unexpected tool output; after, show synthetic-sentinel containment across validator, event sink, and safe response.
 
-Actual before/after results belong in later evidence only after commands run.
+## Execution reconciliation — 2026-10-27
+
+The scenario table above preserves the original planned state. Actual execution now records T00–T17 as passing at the technical checkpoint documented in `EVIDENCE_W08.md`, with two conditional branches classified narrowly: T03 private-resource denial is N/A because the application has no authentication, private resource store, or resource lookup API; T05 exercises the actual text-only renderer rather than inventing rich text. T09 uses a deterministic malicious fake-provider proposal and does not claim a live-model guarantee. T04/T05 and T16 were executed in real Chromium, and T02/T03/T12/T13/T15/T17 include real Node HTTP coverage.
+
+This technical reconciliation is not final pair acceptance. Mateja's review of the completed changes, any requested corrections, explicit acceptance, and the final Git checkpoints remain pending.
+
+Actual checkpoint-based RED/GREEN before/after results are recorded in `EVIDENCE_W08.md`; they are not backfilled into this original planning table.
 
 ## Instruction reconciliation required before implementation
 
